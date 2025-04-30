@@ -22,7 +22,7 @@ type SearchResult struct {
 
 var searchCmd = &cobra.Command{
 	Use:   "search [query]",
-	Short: "搜索可安装的应用程序",
+	Short: "搜索可安装的应用程序(别名:find/query/s)",
 	Long: `如果与 [query] 一起使用，则会显示与查询匹配的应用名称。
 - 启用“use_sqlite_cache”后，[query] 会与应用名称、二进制文件和快捷方式进行部分匹配。
 - 如果不启用“use_sqlite_cache”，[query] 可以使用正则表达式来匹配应用名称和二进制文件。
@@ -45,20 +45,20 @@ var searchCmd = &cobra.Command{
 			os.Exit(1)
 		}
 		println(strOutput)
-		appList, err := utils.PsDirtyJSONToStructList[SearchResult](strOutput)
+		dataList, err := utils.PsDirtyJSONToStructList[SearchResult](strOutput)
 		if err != nil {
 			spinner.Fail(fmt.Sprintf("执行命令 %s 时出错:\n%s", cmdStr, err.Error()))
 			os.Exit(1)
 		}
 
-		appSize := len(appList)
+		dataSize := len(dataList)
 		spinner.Success(pureCmdStr)
 
-		if appSize == 0 {
+		if dataSize == 0 {
 			pterm.Warning.Println("没有匹配的搜索结果！")
 			os.Exit(0)
 		}
-		pterm.Println(fmt.Sprintf("以下是: %s 的匹配结果,共 %d 条", query, appSize))
+		pterm.Println(fmt.Sprintf("以下是: %s 的匹配结果,共 %d 条", query, dataSize))
 
 		maxNumLen := 1
 		maxNameLen := 0
@@ -66,51 +66,51 @@ var searchCmd = &cobra.Command{
 		maxSourceLen := 0
 		maxBinariesLen := 0
 
-		for i, app := range appList {
-			appIndex := i + 1
-			appList[i].Index = appIndex
-			appList[i].FullName = fmt.Sprintf("%s/%s", app.Source, app.Name)
-			appName := app.Name
-			appVersion := app.Version
-			appSource := app.Source
-			cNameLen := len(appName)
+		for i, data := range dataList {
+			dataIndex := i + 1
+			dataList[i].Index = dataIndex
+			dataList[i].FullName = fmt.Sprintf("%s/%s", data.Source, data.Name)
+			dataName := data.Name
+			dataVersion := data.Version
+			dataSource := data.Source
+			cNameLen := len(dataName)
 			if cNameLen > maxNameLen {
 				maxNameLen = cNameLen
 			}
-			cVersionLen := len(appVersion)
+			cVersionLen := len(dataVersion)
 			if cVersionLen > maxVersionLen {
 				maxVersionLen = cVersionLen
 			}
-			cSourceLen := len(appSource)
+			cSourceLen := len(dataSource)
 			if cSourceLen > maxSourceLen {
 				maxSourceLen = cSourceLen
 			}
-			cIndexLen := len(fmt.Sprintf("%d", appIndex))
+			cIndexLen := len(fmt.Sprintf("%d", dataIndex))
 			if cIndexLen > maxNumLen {
 				maxNumLen = cIndexLen
 			}
-			cBinariesLen := len(app.Binaries)
+			cBinariesLen := len(data.Binaries)
 			if cBinariesLen > maxBinariesLen {
 				maxBinariesLen = cBinariesLen
 			}
 
 		}
 		var optList []string
-		optMapper := make(map[string]SearchResult)
-		for _, app := range appList {
-			var optLabel = fmt.Sprintf("%-*d | %-*s | %-*s | %-*s | %-*s", maxNumLen, app.Index, maxNameLen, app.Name, maxVersionLen, app.Version, maxSourceLen, app.Source, maxBinariesLen, app.Binaries)
-			optMapper[optLabel] = app
+		optMap := make(map[string]SearchResult)
+		for _, data := range dataList {
+			optLabel := fmt.Sprintf("%-*d | %-*s | %-*s | %-*s | %-*s", maxNumLen, data.Index, maxNameLen, data.Name, maxVersionLen, data.Version, maxSourceLen, data.Source, maxBinariesLen, data.Binaries)
+			optMap[optLabel] = data
 			optList = append(optList, optLabel)
 		}
-		result, err := pterm.DefaultInteractiveSelect.WithDefaultText("选择一个应用程序进行安装(回车确认,Ctrl+C 取消)").WithOptions(optList).WithMaxHeight(20).Show()
+		selOpt, err := pterm.DefaultInteractiveSelect.WithDefaultText("选择一个应用程序进行安装(回车确认,Ctrl+C 取消)").WithOptions(optList).WithMaxHeight(20).Show()
 
 		if err != nil {
 			pterm.Error.Println("选择应用程序时出错:", err.Error())
 			os.Exit(1)
 		}
-		selectedApp := optMapper[result]
-		if selectedApp.Index > -1 {
-			fullName := selectedApp.FullName
+		selData := optMap[selOpt]
+		if selData.Index > -1 {
+			fullName := selData.FullName
 			pterm.Info.Println(fmt.Sprintf("您选择了: %s", fullName))
 
 			setupCmd := exec.Command("scoop", "install", fullName)

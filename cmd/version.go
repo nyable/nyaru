@@ -10,9 +10,9 @@ import (
 
 var AppVersion = "0.0.1"
 
-var versonCmd = &cobra.Command{
+var versionCmd = &cobra.Command{
 	Use:     "version",
-	Short:   "查询版本信息",
+	Short:   "查询版本信息(别名:v/ver)",
 	Long:    `查询版本信息`,
 	Example: `nyaru version`,
 	Aliases: []string{"v", "ver"},
@@ -29,5 +29,5 @@ var versonCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(versonCmd)
+	rootCmd.AddCommand(versionCmd)
 }
