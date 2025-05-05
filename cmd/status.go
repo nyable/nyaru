@@ -31,7 +31,6 @@ var statusCmd = &cobra.Command{
 			spinner.Fail(fmt.Sprintf("执行命令 %s 时出错:\n%s", cmdStr, err.Error()))
 			os.Exit(1)
 		}
-		println(strOutput)
 		dataList, err := utils.PsDirtyJSONToStructList[StatusResult](strOutput)
 		if err != nil {
 			spinner.Fail(fmt.Sprintf("执行命令 %s 时出错:\n%s", cmdStr, err.Error()))
