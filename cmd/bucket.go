@@ -34,7 +34,7 @@ var bucketListCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		pureCmdStr := "scoop bucket list"
 		fmt.Println(pureCmdStr)
-		spinner, _ := pterm.DefaultSpinner.Start("正在列出已添加的存储桶")
+		spinner, _ := pterm.DefaultSpinner.Start("正在列出已添加的存储桶\n")
 		strOutput, cmdStr, err := utils.RunWithPowerShellCombined("powershell", "-Command", fmt.Sprintf(" %s | ConvertTo-Json -Compress", pureCmdStr))
 		if err != nil {
 			spinner.Fail(fmt.Sprintf("执行命令 %s 时出错:\n%s", cmdStr, err.Error()))
