@@ -28,7 +28,8 @@ var cacheListCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		pureCmdStr := "scoop cache show"
 		fmt.Println(pureCmdStr)
-		spinner, _ := pterm.DefaultSpinner.Start("正在列出缓存内容\n")
+		spinner, _ := pterm.DefaultSpinner.Start("正在列出缓存内容")
+		print("\n")
 		strOutput, cmdStr, err := utils.RunWithPowerShellCombined("powershell", "-Command", fmt.Sprintf(" %s | ConvertTo-Json -Compress", pureCmdStr))
 		if err != nil {
 			spinner.Fail(fmt.Sprintf("执行命令 %s 时出错:\n%s", cmdStr, err.Error()))

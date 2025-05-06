@@ -26,7 +26,8 @@ var statusCmd = &cobra.Command{
 		updateCmd.Run(cmd, []string{})
 		pureCmdStr := "scoop status"
 		fmt.Println(pureCmdStr)
-		spinner, _ := pterm.DefaultSpinner.Start("正在列出已安装应用程序的更新状态\n")
+		spinner, _ := pterm.DefaultSpinner.Start("正在列出已安装应用程序的更新状态")
+		print("\n")
 		strOutput, cmdStr, err := utils.RunWithPowerShellCombined("powershell", "-Command", fmt.Sprintf(" %s | ConvertTo-Json -Compress", pureCmdStr))
 		if err != nil {
 			spinner.Fail(fmt.Sprintf("执行命令 %s 时出错:\n%s", cmdStr, err.Error()))

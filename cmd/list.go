@@ -35,7 +35,8 @@ var listCmd = &cobra.Command{
 		if len(args) > 0 {
 			query = args[0]
 		}
-		spinner, _ := pterm.DefaultSpinner.Start("正在列出已安装的应用程序...\n")
+		spinner, _ := pterm.DefaultSpinner.Start("正在列出已安装的应用程序...")
+		print("\n")
 		pureCmdStr := fmt.Sprintf("scoop list %s", query)
 		fmt.Println(pureCmdStr)
 		strOutput, listCmdStr, err := utils.RunWithPowerShellCombined("powershell", "-Command", fmt.Sprintf(" %s | ConvertTo-Json -Compress", pureCmdStr))

@@ -38,7 +38,8 @@ var searchCmd = &cobra.Command{
 		}
 		pureCmdStr := fmt.Sprintf("scoop search %s", query)
 		fmt.Println(pureCmdStr)
-		spinner, _ := pterm.DefaultSpinner.Start("正在从现有仓库中搜索\n")
+		spinner, _ := pterm.DefaultSpinner.Start("正在从现有仓库中搜索")
+		print("\n")
 		strOutput, cmdStr, err := utils.RunWithPowerShellCombined("powershell", "-Command", fmt.Sprintf(" %s | ConvertTo-Json -Compress", pureCmdStr))
 		if err != nil {
 			spinner.Warning(strOutput)
