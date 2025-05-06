@@ -20,9 +20,10 @@ type StatusResult struct {
 
 var statusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "检查已安装应用的更新状态",
+	Short: "检查已安装应用的更新状态(先执行update然后执行status)",
 	Long:  `检查已安装应用的更新状态`,
 	Run: func(cmd *cobra.Command, args []string) {
+		updateCmd.Run(cmd, []string{})
 		pureCmdStr := "scoop status"
 		fmt.Println(pureCmdStr)
 		spinner, _ := pterm.DefaultSpinner.Start("正在列出已安装应用程序的更新状态")
