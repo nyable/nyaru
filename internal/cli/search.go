@@ -1,4 +1,4 @@
-package cmd
+package cli
 
 import (
 	"fmt"
@@ -6,8 +6,8 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/nyable/nyaru/internal/tui"
 	"github.com/nyable/nyaru/internal/utils"
-	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 )
 
@@ -37,29 +37,30 @@ var searchCmd = &cobra.Command{
 			query = args[0]
 		}
 		pureCmdStr := fmt.Sprintf("scoop search %s", query)
-		fmt.Println(pureCmdStr)
-		spinner, _ := pterm.DefaultSpinner.Start("正在从现有仓库中搜索")
-		print("\n")
-		strOutput, cmdStr, err := utils.RunWithPowerShellCombined("powershell", "-Command", fmt.Sprintf(" %s | ConvertTo-Json -Compress", pureCmdStr))
+		tui.PrintInfo(pureCmdStr)
+
+		res, err := tui.RunWithSpinner("正在从现有仓库中搜索", func() (any, error) {
+			strOutput, _, err := utils.RunWithPowerShellCombined("powershell", "-Command", fmt.Sprintf(" %s | ConvertTo-Json -Compress", pureCmdStr))
+			if err != nil {
+				return nil, err
+			}
+			return utils.PsDirtyJSONToStructList[SearchResult](strOutput)
+		})
+
 		if err != nil {
-			spinner.Warning(strOutput)
-			spinner.Warning(err.Error())
-			os.Exit(1)
-		}
-		dataList, err := utils.PsDirtyJSONToStructList[SearchResult](strOutput)
-		if err != nil {
-			spinner.Fail(fmt.Sprintf("执行命令 %s 时出错:\n%s", cmdStr, err.Error()))
+			tui.PrintError(fmt.Sprintf("执行命令 %s 时出错:\n%v", pureCmdStr, err))
 			os.Exit(1)
 		}
 
+		dataList := res.([]SearchResult)
 		dataSize := len(dataList)
-		spinner.Success(pureCmdStr)
+		tui.PrintSuccess(pureCmdStr)
 
 		if dataSize == 0 {
-			pterm.Warning.Println("没有匹配的搜索结果！")
+			tui.PrintWarning("没有匹配的搜索结果！")
 			os.Exit(0)
 		}
-		pterm.Println(fmt.Sprintf("以下是: %s 的匹配结果,共 %d 条", query, dataSize))
+		tui.PrintInfo(fmt.Sprintf("以下是: %s 的匹配结果,共 %d 条", query, dataSize))
 
 		maxNumLen := 1
 		maxNameLen := 0
@@ -103,34 +104,35 @@ var searchCmd = &cobra.Command{
 			optMap[optLabel] = data
 			optList = append(optList, optLabel)
 		}
-		selOpt, err := pterm.DefaultInteractiveSelect.WithDefaultText("选择一个应用程序进行安装(回车确认,Ctrl+C 取消)").WithOptions(optList).WithMaxHeight(20).Show()
-
+		
+		selOpt, err := tui.RunSingleSelect("选择一个应用程序进行安装(回车确认,Ctrl+C/q 取消)", optList)
 		if err != nil {
-			pterm.Error.Println("选择应用程序时出错:", err.Error())
+			tui.PrintError(fmt.Sprintf("选择应用程序时出错: %v", err))
 			os.Exit(1)
 		}
+
 		selData := optMap[selOpt]
 		if selData.Index > -1 {
 			fullName := selData.FullName
-			pterm.Info.Println(fmt.Sprintf("您选择了: %s", fullName))
+			tui.PrintInfo(fmt.Sprintf("您选择了: %s", fullName))
 
 			setupCmd := exec.Command("scoop", "install", fullName)
 			setupCmdStr := strings.Join(setupCmd.Args, " ")
-			pterm.Info.Printfln("执行安装命令: %s", setupCmdStr)
+			tui.PrintInfo(fmt.Sprintf("执行安装命令: %s", setupCmdStr))
 
 			setupCmd.Stdout = os.Stdout
 			setupCmd.Stderr = os.Stderr
 			err := setupCmd.Run()
 			if err != nil {
-				pterm.Error.Println(fmt.Sprintf("执行命令: %s 时出错:\n%s", setupCmdStr, err.Error()))
+				tui.PrintError(fmt.Sprintf("执行命令: %s 时出错:\n%v", setupCmdStr, err))
 				os.Exit(1)
 			}
-			pterm.Success.Printfln("执行完毕!")
-			pterm.Info.Println("==========相关命令==========")
-			println("查看该应用程序: ")
-			println("scoop info " + fullName)
-			println("卸载该应用程序: ")
-			println("scoop uninstall " + fullName)
+			tui.PrintSuccess("执行完毕!")
+			tui.PrintInfo("==========相关命令==========")
+			fmt.Println("查看该应用程序: ")
+			fmt.Println("scoop info " + fullName)
+			fmt.Println("卸载该应用程序: ")
+			fmt.Println("scoop uninstall " + fullName)
 		}
 
 	},

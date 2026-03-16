@@ -1,11 +1,12 @@
-package cmd
+package cli
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 
-	"github.com/pterm/pterm"
+	"github.com/nyable/nyaru/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -15,8 +16,8 @@ var updateCmd = &cobra.Command{
 	Long:  "等同于 scoop update",
 	Run: func(cmd *cobra.Command, args []string) {
 		update := exec.Command("scoop", "update")
-		pterm.Info.Println("开始执行命令:")
-		println(strings.Join(update.Args, " "))
+		tui.PrintInfo("开始执行命令:")
+		fmt.Println(strings.Join(update.Args, " "))
 		update.Stdout = os.Stdout
 		update.Stderr = os.Stderr
 		update.Run()

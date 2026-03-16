@@ -1,4 +1,4 @@
-package cmd
+package cli
 
 import (
 	"fmt"
@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/nyable/nyaru/internal/models"
+	"github.com/nyable/nyaru/internal/tui"
 	"github.com/nyable/nyaru/internal/utils"
-	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 )
 
@@ -35,32 +35,37 @@ var listCmd = &cobra.Command{
 		if len(args) > 0 {
 			query = args[0]
 		}
-		spinner, _ := pterm.DefaultSpinner.Start("正在列出已安装的应用程序...")
-		print("\n")
 		pureCmdStr := fmt.Sprintf("scoop list %s", query)
-		fmt.Println(pureCmdStr)
-		strOutput, listCmdStr, err := utils.RunWithPowerShellCombined("powershell", "-Command", fmt.Sprintf(" %s | ConvertTo-Json -Compress", pureCmdStr))
+		tui.PrintInfo(pureCmdStr)
+
+		res, err := tui.RunWithSpinner("正在列出已安装的应用程序...", func() (any, error) {
+			strOutput, _, err := utils.RunWithPowerShellCombined("powershell", "-Command", fmt.Sprintf(" %s | ConvertTo-Json -Compress", pureCmdStr))
+			if err != nil {
+				return nil, err
+			}
+			return utils.PsDirtyJSONToStructList[ListResult](strOutput)
+		})
 		if err != nil {
-			spinner.Fail(fmt.Sprintf("执行命令 %s 时出错:\n%s", listCmdStr, err.Error()))
+			tui.PrintError(fmt.Sprintf("执行命令 %s 时出错:\n%v", pureCmdStr, err))
 			os.Exit(1)
 		}
-		dataList, err := utils.PsDirtyJSONToStructList[ListResult](strOutput)
-		if err != nil {
-			spinner.Fail(fmt.Sprintf("执行命令 %s 时出错:\n%s", listCmdStr, err.Error()))
-			os.Exit(1)
-		}
+		
+		dataList := res.([]ListResult)
 		dataSize := len(dataList)
-		spinner.Success(pureCmdStr)
-		pterm.Printfln("获取到 %d 个已安装应用", dataSize)
+		tui.PrintSuccess(pureCmdStr)
+		tui.PrintInfo(fmt.Sprintf("获取到 %d 个已安装应用", dataSize))
+		
 		if dataSize == 0 {
-			pterm.Warning.Println("没有匹配的已安装应用，不进行任何操作!")
+			tui.PrintWarning("没有匹配的已安装应用，不进行任何操作!")
 			os.Exit(0)
 		}
+		
 		maxNumLen := 1
 		maxNameLen := 0
 		maxVersionLen := 0
 		maxSourceLen := 0
 		const maxUpdatedLen = 14
+		
 		for i, data := range dataList {
 			dataIndex := i + 1
 			dataSource := data.Source
@@ -95,26 +100,24 @@ var listCmd = &cobra.Command{
 		var optList []string
 		optMap := make(map[string]ListResult)
 		for _, data := range dataList {
-			var optLabel = fmt.Sprintf("%-*d | %-*s | %-*s | %-*s | %-*s", maxNumLen, data.Index, maxNameLen, data.Name, maxVersionLen, data.Version, maxUpdatedLen, data.Updated, maxSourceLen, data.Source)
+			optLabel := fmt.Sprintf("%-*d | %-*s | %-*s | %-*s | %-*s", maxNumLen, data.Index, maxNameLen, data.Name, maxVersionLen, data.Version, maxUpdatedLen, data.Updated, maxSourceLen, data.Source)
 			optMap[optLabel] = data
 			optList = append(optList, optLabel)
 		}
-		selOptList, err := pterm.DefaultInteractiveMultiselect.
-			WithDefaultText("选取需要操作的应用程序").
-			WithOptions(optList).
-			WithMaxHeight(20).
-			Show()
 
+		selOptList, err := tui.RunMultiSelect("选取需要操作的应用程序", optList)
 		if err != nil {
-			pterm.Error.Println("选择应用程序时出错:", err.Error())
+			tui.PrintError(fmt.Sprintf("选择应用程序时出错: %v", err))
 			os.Exit(1)
 		}
-		var selOptSize = len(selOptList)
-		pterm.Info.Printfln("选中了 %d 个应用程序", selOptSize)
+		
+		selOptSize := len(selOptList)
+		tui.PrintInfo(fmt.Sprintf("选中了 %d 个应用程序", selOptSize))
 		if selOptSize == 0 {
-			pterm.Warning.Println("没有选择任何应用程序!退出运行!")
+			tui.PrintWarning("没有选择任何应用程序!退出运行!")
 			os.Exit(0)
 		}
+		
 		cmdActions := []models.CmdAction{
 			{Command: "info", Desc: "显示应用程序的详细信息"},
 			{Command: "update", Desc: "更新应用程序"},
@@ -131,10 +134,17 @@ var listCmd = &cobra.Command{
 			actionMap[optLabel] = cmdAction
 			options = append(options, optLabel)
 		}
-		selAction, _ := pterm.DefaultInteractiveSelect.WithDefaultText("想要进行的操作是?").WithOptions(options).Show()
-		pterm.Printfln("选择: %s", selAction)
+		
+		selAction, err := tui.RunSingleSelect("想要进行的操作是?", options)
+		if err != nil {
+			tui.PrintError(fmt.Sprintf("选择操作时出错: %v", err))
+			os.Exit(1)
+		}
+		tui.PrintInfo(fmt.Sprintf("选择: %s", selAction))
+		
 		command := actionMap[selAction].Command
-		pterm.Warning.Printfln("对所有选中应用执行命令:%s", command)
+		tui.PrintWarning(fmt.Sprintf("对所有选中应用执行命令: %s", command))
+		
 		var sucCount = 0
 		var errCount = 0
 		for _, selOpt := range selOptList {
@@ -142,23 +152,22 @@ var listCmd = &cobra.Command{
 			fullName := selData.FullName
 			actionCmd := exec.Command("scoop", command, fullName)
 			actionCmdStr := strings.Join(actionCmd.Args, " ")
-			pterm.Info.Println("开始执行命令:")
-			println(actionCmdStr)
-			pterm.Info.Println("==========")
+			tui.PrintInfo("开始执行命令:")
+			fmt.Println(actionCmdStr)
+			tui.PrintInfo("==========")
 			actionCmd.Stdout = os.Stdout
 			actionCmd.Stderr = os.Stderr
 			err := actionCmd.Run()
 			if err != nil {
 				errCount++
-				pterm.Error.Println(fmt.Sprintf("执行命令: %s 时出错:\n%s", actionCmd, err.Error()))
+				tui.PrintError(fmt.Sprintf("执行命令: %s 时出错:\n%v", actionCmd, err))
 			} else {
 				sucCount++
-				pterm.Success.Printfln("执行完毕!")
+				tui.PrintSuccess("执行完毕!")
 			}
 		}
-		pterm.Info.Println("==========")
-		pterm.Info.Printfln("成功 %d 个，失败 %d 个", sucCount, errCount)
-
+		tui.PrintInfo("==========")
+		tui.PrintInfo(fmt.Sprintf("成功 %d 个，失败 %d 个", sucCount, errCount))
 	},
 }
 

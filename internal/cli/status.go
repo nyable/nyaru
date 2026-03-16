@@ -1,4 +1,4 @@
-package cmd
+package cli
 
 import (
 	"fmt"
@@ -6,8 +6,8 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/nyable/nyaru/internal/tui"
 	"github.com/nyable/nyaru/internal/utils"
-	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 )
 
@@ -25,25 +25,27 @@ var statusCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		updateCmd.Run(cmd, []string{})
 		pureCmdStr := "scoop status"
-		fmt.Println(pureCmdStr)
-		spinner, _ := pterm.DefaultSpinner.Start("正在列出已安装应用程序的更新状态")
-		print("\n")
-		strOutput, cmdStr, err := utils.RunWithPowerShellCombined("powershell", "-Command", fmt.Sprintf(" %s | ConvertTo-Json -Compress", pureCmdStr))
+		tui.PrintInfo(pureCmdStr)
+		
+		res, err := tui.RunWithSpinner("正在列出已安装应用程序的更新状态", func() (any, error) {
+			strOutput, _, err := utils.RunWithPowerShellCombined("powershell", "-Command", fmt.Sprintf(" %s | ConvertTo-Json -Compress", pureCmdStr))
+			if err != nil {
+				return nil, err
+			}
+			return utils.PsDirtyJSONToStructList[StatusResult](strOutput)
+		})
+		
 		if err != nil {
-			spinner.Fail(fmt.Sprintf("执行命令 %s 时出错:\n%s", cmdStr, err.Error()))
+			tui.PrintError(fmt.Sprintf("执行命令 %s 时出错:\n%v", pureCmdStr, err))
 			os.Exit(1)
 		}
-		dataList, err := utils.PsDirtyJSONToStructList[StatusResult](strOutput)
-		if err != nil {
-			spinner.Fail(fmt.Sprintf("执行命令 %s 时出错:\n%s", cmdStr, err.Error()))
-			os.Exit(1)
-		}
-
+		
+		dataList := res.([]StatusResult)
 		dataSize := len(dataList)
-		spinner.Success(pureCmdStr)
+		tui.PrintSuccess(pureCmdStr)
 
 		if dataSize == 0 {
-			pterm.Warning.Println("没有可更新的应用程序！")
+			tui.PrintWarning("没有可更新的应用程序！")
 			os.Exit(0)
 		}
 
@@ -74,8 +76,8 @@ var statusCmd = &cobra.Command{
 			if cNewVersionLen > maxNewVersion {
 				maxNewVersion = cNewVersionLen
 			}
-
 		}
+		
 		var optList []string
 		optMap := make(map[string]StatusResult)
 		for _, data := range dataList {
@@ -83,17 +85,20 @@ var statusCmd = &cobra.Command{
 			optMap[optLabel] = data
 			optList = append(optList, optLabel)
 		}
-		selOptList, err := pterm.DefaultInteractiveMultiselect.WithDefaultText("请选择需要更新的应用程序").WithOptions(optList).WithMaxHeight(20).Show()
+		
+		selOptList, err := tui.RunMultiSelect("请选择需要更新的应用程序", optList)
 		if err != nil {
-			pterm.Error.Println("获取选项时出错:", err.Error())
+			tui.PrintError(fmt.Sprintf("获取选项时出错: %v", err))
 			os.Exit(1)
 		}
-		var selOptSize = len(selOptList)
-		pterm.Info.Printfln("选中了 %d 个应用程序", selOptSize)
+		
+		selOptSize := len(selOptList)
+		tui.PrintInfo(fmt.Sprintf("选中了 %d 个应用程序", selOptSize))
 		if selOptSize == 0 {
-			pterm.Warning.Println("没有选择任何应用程序!退出运行!")
+			tui.PrintWarning("没有选择任何应用程序!退出运行!")
 			os.Exit(0)
 		}
+		
 		var sucCount = 0
 		var errCount = 0
 		for _, selData := range selOptList {
@@ -101,23 +106,22 @@ var statusCmd = &cobra.Command{
 			bucketName := data.Name
 			rmBucketCmd := exec.Command("scoop", "update", bucketName)
 			rmBucketCmdStr := strings.Join(rmBucketCmd.Args, " ")
-			pterm.Info.Println("开始执行命令:")
-			println(rmBucketCmdStr)
-			pterm.Info.Println("==========")
+			tui.PrintInfo("开始执行命令:")
+			fmt.Println(rmBucketCmdStr)
+			tui.PrintInfo("==========")
 			rmBucketCmd.Stdout = os.Stdout
 			rmBucketCmd.Stderr = os.Stderr
 			err := rmBucketCmd.Run()
 			if err != nil {
 				errCount++
-				pterm.Error.Println(fmt.Sprintf("执行命令: %s 时出错:\n%s", rmBucketCmd, err.Error()))
+				tui.PrintError(fmt.Sprintf("执行命令: %s 时出错:\n%v", rmBucketCmd, err))
 			} else {
 				sucCount++
-				pterm.Success.Printfln("执行完毕!")
+				tui.PrintSuccess("执行完毕!")
 			}
-			pterm.Info.Println("==========")
-			pterm.Info.Printfln("成功 %d 个，失败 %d 个", sucCount, errCount)
+			tui.PrintInfo("==========")
+			tui.PrintInfo(fmt.Sprintf("成功 %d 个，失败 %d 个", sucCount, errCount))
 		}
-
 	},
 }
 

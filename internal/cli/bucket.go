@@ -1,4 +1,4 @@
-package cmd
+package cli
 
 import (
 	"fmt"
@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/nyable/nyaru/internal/models"
+	"github.com/nyable/nyaru/internal/tui"
 	"github.com/nyable/nyaru/internal/utils"
-	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 )
 
@@ -33,29 +33,30 @@ var bucketListCmd = &cobra.Command{
 	Aliases: []string{"ls"},
 	Run: func(cmd *cobra.Command, args []string) {
 		pureCmdStr := "scoop bucket list"
-		fmt.Println(pureCmdStr)
-		spinner, _ := pterm.DefaultSpinner.Start("正在列出已添加的存储桶")
-		print("\n")
-		strOutput, cmdStr, err := utils.RunWithPowerShellCombined("powershell", "-Command", fmt.Sprintf(" %s | ConvertTo-Json -Compress", pureCmdStr))
+		tui.PrintInfo(pureCmdStr)
+		
+		res, err := tui.RunWithSpinner("正在列出已添加的存储桶", func() (any, error) {
+			strOutput, _, err := utils.RunWithPowerShellCombined("powershell", "-Command", fmt.Sprintf(" %s | ConvertTo-Json -Compress", pureCmdStr))
+			if err != nil {
+				return nil, err
+			}
+			return utils.PsDirtyJSONToStructList[BucketResult](strOutput)
+		})
+		
 		if err != nil {
-			spinner.Fail(fmt.Sprintf("执行命令 %s 时出错:\n%s", cmdStr, err.Error()))
+			tui.PrintError(fmt.Sprintf("执行命令 %s 时出错:\n%v", pureCmdStr, err))
 			os.Exit(1)
 		}
-		println(strOutput)
-		dataList, err := utils.PsDirtyJSONToStructList[BucketResult](strOutput)
-		if err != nil {
-			spinner.Fail(fmt.Sprintf("执行命令 %s 时出错:\n%s", cmdStr, err.Error()))
-			os.Exit(1)
-		}
-
+		
+		dataList := res.([]BucketResult)
 		dataSize := len(dataList)
-		spinner.Success(pureCmdStr)
+		tui.PrintSuccess(pureCmdStr)
 
 		if dataSize == 0 {
-			pterm.Warning.Println("没有添加任何存储桶！")
+			tui.PrintWarning("没有添加任何存储桶！")
 			os.Exit(0)
 		}
-		pterm.Println(fmt.Sprintf("已添加 %d 个存储桶", dataSize))
+		tui.PrintInfo(fmt.Sprintf("已添加 %d 个存储桶", dataSize))
 
 		maxNumLen := 1
 		maxNameLen := 0
@@ -83,8 +84,8 @@ var bucketListCmd = &cobra.Command{
 			if cBinariesLen > maxManifestsLen {
 				maxManifestsLen = cBinariesLen
 			}
-
 		}
+		
 		var optList []string
 		optMap := make(map[string]BucketResult)
 		for _, app := range dataList {
@@ -92,15 +93,17 @@ var bucketListCmd = &cobra.Command{
 			optMap[optLabel] = app
 			optList = append(optList, optLabel)
 		}
-		selOptList, err := pterm.DefaultInteractiveMultiselect.WithDefaultText("选择一个想要操作的存储桶").WithOptions(optList).WithMaxHeight(20).Show()
+		
+		selOptList, err := tui.RunMultiSelect("选择一个想要操作的存储桶", optList)
 		if err != nil {
-			pterm.Error.Println("选择存储桶时出错:", err.Error())
+			tui.PrintError(fmt.Sprintf("选择存储桶时出错: %v", err))
 			os.Exit(1)
 		}
-		var selOptSize = len(selOptList)
-		pterm.Info.Printfln("选中了 %d 个存储桶", selOptSize)
+		
+		selOptSize := len(selOptList)
+		tui.PrintInfo(fmt.Sprintf("选中了 %d 个存储桶", selOptSize))
 		if selOptSize == 0 {
-			pterm.Warning.Println("没有选择任何存储桶!退出运行!")
+			tui.PrintWarning("没有选择任何存储桶!退出运行!")
 			os.Exit(0)
 		}
 
@@ -117,10 +120,17 @@ var bucketListCmd = &cobra.Command{
 			actionMap[optLabel] = cmdAction
 			options = append(options, optLabel)
 		}
-		selAction, _ := pterm.DefaultInteractiveSelect.WithDefaultText("想要进行的操作是?").WithOptions(options).Show()
-		pterm.Printfln("选择: %s", selAction)
+		
+		selAction, err := tui.RunSingleSelect("想要进行的操作是?", options)
+		if err != nil {
+			tui.PrintError(fmt.Sprintf("选择操作时出错: %v", err))
+			os.Exit(1)
+		}
+		tui.PrintInfo(fmt.Sprintf("选择: %s", selAction))
+		
 		command := actionMap[selAction].Command
-		pterm.Warning.Printfln("对所有选中存储桶执行命令:%s", command)
+		tui.PrintWarning(fmt.Sprintf("对所有选中存储桶执行命令:%s", command))
+		
 		var sucCount = 0
 		var errCount = 0
 		for _, selOpt := range selOptList {
@@ -130,21 +140,21 @@ var bucketListCmd = &cobra.Command{
 			if command == "rm" {
 				rmBucketCmd := exec.Command("scoop", "bucket", "rm", bucketName)
 				rmBucketCmdStr := strings.Join(rmBucketCmd.Args, " ")
-				pterm.Info.Println("开始执行命令:")
-				println(rmBucketCmdStr)
-				pterm.Info.Println("==========")
+				tui.PrintInfo("开始执行命令:")
+				fmt.Println(rmBucketCmdStr)
+				tui.PrintInfo("==========")
 				rmBucketCmd.Stdout = os.Stdout
 				rmBucketCmd.Stderr = os.Stderr
 				err := rmBucketCmd.Run()
 				if err != nil {
 					errCount++
-					pterm.Error.Println(fmt.Sprintf("执行命令: %s 时出错:\n%s", rmBucketCmd, err.Error()))
+					tui.PrintError(fmt.Sprintf("执行命令: %s 时出错:\n%v", rmBucketCmd, err))
 				} else {
 					sucCount++
-					pterm.Success.Printfln("执行完毕!")
+					tui.PrintSuccess("执行完毕!")
 				}
-				pterm.Info.Println("==========")
-				pterm.Info.Printfln("成功 %d 个，失败 %d 个", sucCount, errCount)
+				tui.PrintInfo("==========")
+				tui.PrintInfo(fmt.Sprintf("成功 %d 个，失败 %d 个", sucCount, errCount))
 			} else if command == "add" {
 				fmt.Printf("scoop bucket add %s %s\n", bucketName, selData.Source)
 			} else {
