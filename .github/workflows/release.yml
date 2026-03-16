@@ -26,7 +26,7 @@ jobs:
       - name: Download Go modules
         run: go mod download
       - name: Build for Windows (AMD64)
-        run: GOOS=windows GOARCH=amd64 go build -o nyaru.exe ./
+        run: GOOS=windows GOARCH=amd64 go build -o nyaru.exe ./cmd/nyaru
       - name: Calculate Artifact Hashes
         id: calculate_hashes
         run: |
@@ -44,20 +44,20 @@ jobs:
           ARTIFACT_HASHES="${{ steps.calculate_hashes.outputs.hashes }}"
 
           echo "release_body<<EOF" >> $GITHUB_OUTPUT
-          echo "## $TAG_NAME" >> $GITHUB_OUTPUT
-          echo "" >> $GITHUB_OUTPUT # 添加空行
-          echo "**Tagged Commit:** \`$COMMIT_SHA\`" >> $GITHUB_OUTPUT
-          echo "" >> $GITHUB_OUTPUT # 添加空行
-          echo "### Changes" >> $GITHUB_OUTPUT
-          echo -e "$COMMIT_MESSAGE" >> $GITHUB_OUTPUT
-          echo "" >> $GITHUB_OUTPUT # 添加空行
-          echo "*Build artifacts attached below.*" >> $GITHUB_OUTPUT 
-          echo "### Checksums (SHA-256)" >> $GITHUB_OUTPUT
-          echo "\`\`\`" >> $GITHUB_OUTPUT 
-          echo -e "$ARTIFACT_HASHES" >> $GITHUB_OUTPUT 
+          echo "🚀 **Release $TAG_NAME**" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "### 📝 What's New" >> $GITHUB_OUTPUT
+          echo "- $COMMIT_MESSAGE" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "---" >> $GITHUB_OUTPUT
+          echo "### 📦 Artifacts & Hashes" >> $GITHUB_OUTPUT
+          echo "Please find the compiled executable attached below." >> $GITHUB_OUTPUT
+          echo "Verify your download with the following SHA-256 checksum:" >> $GITHUB_OUTPUT
+          echo "\`\`\`text" >> $GITHUB_OUTPUT
+          echo -e "$ARTIFACT_HASHES" >> $GITHUB_OUTPUT
           echo "\`\`\`" >> $GITHUB_OUTPUT
           echo "" >> $GITHUB_OUTPUT
-          echo "*Build artifacts attached below.*" >> $GITHUB_OUTPUT
+          echo "💡 *Commit: [\`$COMMIT_SHA\`](https://github.com/${{ github.repository }}/commit/$COMMIT_SHA)*" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
         shell: bash
       - name: Create Release and Upload Assets
@@ -66,7 +66,7 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           body: ${{steps.prepare_notes.outputs.release_body}}
-          draft: false
+          draft: true
           prerelease: false
           files: |
             nyaru.exe
