@@ -18,11 +18,11 @@ func PsDirtyJSONToStructList[T any](dirtyJSON string) ([]T, error) {
 	outputJSONStr := "[]"
 	for _, line := range lines {
 		cleanLine := strings.TrimSpace(line)
-		if strings.HasPrefix(cleanLine, "[") {
-			outputJSONStr = cleanLine
+		if idx := strings.Index(cleanLine, "["); idx != -1 {
+			outputJSONStr = cleanLine[idx:]
 			break
-		} else if strings.HasPrefix(cleanLine, "{") {
-			outputJSONStr = "[" + cleanLine + "]"
+		} else if idx := strings.Index(cleanLine, "{"); idx != -1 {
+			outputJSONStr = "[" + cleanLine[idx:] + "]"
 			break
 		}
 	}
@@ -31,3 +31,13 @@ func PsDirtyJSONToStructList[T any](dirtyJSON string) ([]T, error) {
 	err := json.Unmarshal(jsonBytes, &list)
 	return list, err
 }
+
+func StandardJSONToStructList[T any](jsonStr string) ([]T, error) {
+	var list []T
+	if strings.TrimSpace(jsonStr) == "" {
+		return list, nil
+	}
+	err := json.Unmarshal([]byte(jsonStr), &list)
+	return list, err
+}
+

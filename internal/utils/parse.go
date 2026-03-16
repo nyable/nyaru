@@ -3,6 +3,7 @@ package utils
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 )
 
@@ -45,4 +46,49 @@ func SizeToHumanRead(size int64) string {
 
 	// Format the value with one decimal place and the unit
 	return fmt.Sprintf("%.1f %s", value, units[int(i)])
+}
+
+func HumanSizeToBytes(s string) int64 {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+
+	fields := strings.Fields(s)
+	if len(fields) == 0 {
+		return 0
+	}
+
+	val, err := strconv.ParseFloat(fields[0], 64)
+	if err != nil {
+		return 0
+	}
+
+	if len(fields) == 1 {
+		return int64(val)
+	}
+
+	unit := strings.ToUpper(fields[1])
+	var multiplier float64 = 1
+
+	switch unit {
+	case "KB", "K":
+		multiplier = 1024
+	case "MB", "M":
+		multiplier = 1024 * 1024
+	case "GB", "G":
+		multiplier = 1024 * 1024 * 1024
+	case "TB", "T":
+		multiplier = 1024 * 1024 * 1024 * 1024
+	case "KIB":
+		multiplier = 1024
+	case "MIB":
+		multiplier = 1024 * 1024
+	case "GIB":
+		multiplier = 1024 * 1024 * 1024
+	case "TIB":
+		multiplier = 1024 * 1024 * 1024 * 1024
+	}
+
+	return int64(val * multiplier)
 }

@@ -3,125 +3,113 @@ package cli
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/list"
+	"github.com/nyable/nyaru/internal/config"
+	"github.com/nyable/nyaru/internal/core"
+	"github.com/nyable/nyaru/internal/models"
 	"github.com/nyable/nyaru/internal/tui"
-	"github.com/nyable/nyaru/internal/utils"
 	"github.com/spf13/cobra"
 )
 
-type StatusResult struct {
-	Index      int
-	Name       string `json:"Name"`
-	Version    string `json:"Installed Version"`
-	NewVersion string `json:"Latest Version"`
-}
-
 var statusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "检查已安装应用的更新状态(先执行update然后执行status)",
+	Short: "检查已安装应用的更新状态",
 	Long:  `检查已安装应用的更新状态`,
 	Run: func(cmd *cobra.Command, args []string) {
-		updateCmd.Run(cmd, []string{})
-		pureCmdStr := "scoop status"
-		tui.PrintInfo(pureCmdStr)
-		
-		res, err := tui.RunWithSpinner("正在列出已安装应用程序的更新状态", func() (any, error) {
-			strOutput, _, err := utils.RunWithPowerShellCombined("powershell", "-Command", fmt.Sprintf(" %s | ConvertTo-Json -Compress", pureCmdStr))
-			if err != nil {
-				return nil, err
-			}
-			return utils.PsDirtyJSONToStructList[StatusResult](strOutput)
+		pm := core.GetManager(config.GetActiveMode())
+
+		res, err := tui.RunWithSpinner("正在列出可更新的应用程序...", func() (any, error) {
+			return pm.Status()
 		})
 		
 		if err != nil {
-			tui.PrintError(fmt.Sprintf("执行命令 %s 时出错:\n%v", pureCmdStr, err))
+			tui.PrintError(fmt.Sprintf("列出状态出错:\n%v", err))
 			os.Exit(1)
 		}
 		
-		dataList := res.([]StatusResult)
-		dataSize := len(dataList)
-		tui.PrintSuccess(pureCmdStr)
-
-		if dataSize == 0 {
+		dataList := res.([]models.AppInfo)
+		
+		if len(dataList) == 0 {
 			tui.PrintWarning("没有可更新的应用程序！")
 			os.Exit(0)
 		}
 
-		maxNumLen := 1
-		maxNameLen := 0
-		maxVersionLen := 0
-		maxNewVersion := 0
+		var items []list.Item
+		for _, v := range dataList {
+			app := v
+			app.Installed = true
+			items = append(items, app)
+		}
 
-		for i, data := range dataList {
-			dataIndex := i + 1
-			dataList[i].Index = dataIndex
-			dataName := data.Name
-			dataVersion := data.Version
-			dataNewVersion := data.NewVersion
-			cNameLen := len(dataName)
-			if cNameLen > maxNameLen {
-				maxNameLen = cNameLen
-			}
-			cVersionLen := len(dataVersion)
-			if cVersionLen > maxVersionLen {
-				maxVersionLen = cVersionLen
-			}
-			cIndexLen := len(fmt.Sprintf("%d", dataIndex))
-			if cIndexLen > maxNumLen {
-				maxNumLen = cIndexLen
-			}
-			cNewVersionLen := len(dataNewVersion)
-			if cNewVersionLen > maxNewVersion {
-				maxNewVersion = cNewVersionLen
-			}
-		}
-		
-		var optList []string
-		optMap := make(map[string]StatusResult)
-		for _, data := range dataList {
-			optLabel := fmt.Sprintf("%-*d | %-*s | %-*s | %-*s", maxNumLen, data.Index, maxNameLen, data.Name, maxVersionLen, data.Version, maxNewVersion, data.NewVersion)
-			optMap[optLabel] = data
-			optList = append(optList, optLabel)
-		}
-		
-		selOptList, err := tui.RunMultiSelect("请选择需要更新的应用程序", optList)
+		results, err := tui.RunListInteractive("Updatable Apps ("+config.GetActiveMode()+")", items, pm.Info)
+
+
 		if err != nil {
-			tui.PrintError(fmt.Sprintf("获取选项时出错: %v", err))
+			tui.PrintError(fmt.Sprintf("TUI Error: %v", err))
 			os.Exit(1)
 		}
-		
-		selOptSize := len(selOptList)
-		tui.PrintInfo(fmt.Sprintf("选中了 %d 个应用程序", selOptSize))
-		if selOptSize == 0 {
-			tui.PrintWarning("没有选择任何应用程序!退出运行!")
-			os.Exit(0)
-		}
-		
-		var sucCount = 0
-		var errCount = 0
-		for _, selData := range selOptList {
-			data := optMap[selData]
-			bucketName := data.Name
-			rmBucketCmd := exec.Command("scoop", "update", bucketName)
-			rmBucketCmdStr := strings.Join(rmBucketCmd.Args, " ")
-			tui.PrintInfo("开始执行命令:")
-			fmt.Println(rmBucketCmdStr)
-			tui.PrintInfo("==========")
-			rmBucketCmd.Stdout = os.Stdout
-			rmBucketCmd.Stderr = os.Stderr
-			err := rmBucketCmd.Run()
-			if err != nil {
-				errCount++
-				tui.PrintError(fmt.Sprintf("执行命令: %s 时出错:\n%v", rmBucketCmd, err))
-			} else {
-				sucCount++
-				tui.PrintSuccess("执行完毕!")
+
+		if len(results) > 0 {
+			cmdActions := []models.CmdAction{
+				{Command: "update", Desc: "更新选中的应用"},
+				{Command: "none", Desc: "什么也不做"},
 			}
-			tui.PrintInfo("==========")
-			tui.PrintInfo(fmt.Sprintf("成功 %d 个，失败 %d 个", sucCount, errCount))
+
+			options := []string{}
+			actionMap := make(map[string]models.CmdAction)
+			for _, action := range cmdActions {
+				label := fmt.Sprintf("%s (%s)", action.Command, action.Desc)
+				options = append(options, label)
+				actionMap[label] = action
+			}
+
+			selLabel, err := tui.RunSingleSelect("想要执行的操作是?", options)
+			if err != nil {
+				tui.PrintError(fmt.Sprintf("选择操作出错: %v", err))
+				os.Exit(1)
+			}
+
+			action := actionMap[selLabel]
+			if action.Command == "none" {
+				return
+			}
+
+			if action.Command == "update" {
+				var names []string
+				for _, item := range results {
+					if choice, ok := item.(models.AppInfo); ok {
+						names = append(names, choice.FullName())
+					}
+				}
+
+				if len(names) == 0 {
+					return
+				}
+
+				// Confirm if multiselect
+				if len(names) > 1 {
+					fmt.Printf("⚠ 确认更新这 %d 个应用程序吗？(y/n): ", len(names))
+					var confirm string
+					fmt.Scanln(&confirm)
+					if strings.ToLower(confirm) != "y" {
+						tui.PrintInfo("已取消更新")
+						return
+					}
+				}
+
+				for _, name := range names {
+					tui.PrintInfo(fmt.Sprintf("正在更新: %s", name))
+					if err := pm.Install(name); err != nil {
+						tui.PrintError(fmt.Sprintf("更新 %s 失败: %v", name, err))
+					} else {
+						tui.PrintSuccess(fmt.Sprintf("更新 %s 成功!", name))
+					}
+				}
+			}
 		}
+
 	},
 }
 

@@ -3,31 +3,21 @@ package cli
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/list"
+	"github.com/nyable/nyaru/internal/config"
+	"github.com/nyable/nyaru/internal/core"
+	"github.com/nyable/nyaru/internal/models"
 	"github.com/nyable/nyaru/internal/tui"
-	"github.com/nyable/nyaru/internal/utils"
 	"github.com/spf13/cobra"
 )
 
-type SearchResult struct {
-	Index    int
-	Name     string
-	Version  string
-	Source   string
-	FullName string
-	Binaries string
-}
-
 var searchCmd = &cobra.Command{
-	Use:   "search [query]",
-	Short: "搜索可安装的应用程序(别名:find/query/s)",
-	Long: `如果与 [query] 一起使用，则会显示与查询匹配的应用名称。
-- 启用“use_sqlite_cache”后，[query] 会与应用名称、二进制文件和快捷方式进行部分匹配。
-- 如果不启用“use_sqlite_cache”，[query] 可以使用正则表达式来匹配应用名称和二进制文件。
-如果不启用 [query]，则会显示所有可用的应用。`,
-	Example: `nyaru search aria2 # 搜索 aria2`,
+	Use:     "search [query]",
+	Short:   "搜索可安装的应用程序(别名:find/query/s)",
+	Long:    `搜索与查询匹配的应用名称。使用配置文件中指定的包管理器（sfsu 或 scoop）。`,
+	Example: `nyaru search aria2`,
 	Aliases: []string{"find", "query", "s"},
 	Args:    cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
@@ -36,103 +26,97 @@ var searchCmd = &cobra.Command{
 		if len(args) > 0 {
 			query = args[0]
 		}
-		pureCmdStr := fmt.Sprintf("scoop search %s", query)
-		tui.PrintInfo(pureCmdStr)
 
-		res, err := tui.RunWithSpinner("正在从现有仓库中搜索", func() (any, error) {
-			strOutput, _, err := utils.RunWithPowerShellCombined("powershell", "-Command", fmt.Sprintf(" %s | ConvertTo-Json -Compress", pureCmdStr))
-			if err != nil {
-				return nil, err
-			}
-			return utils.PsDirtyJSONToStructList[SearchResult](strOutput)
+		pm := core.GetManager(config.GetActiveMode())
+
+		res, err := tui.RunWithSpinner("正在搜索中...", func() (any, error) {
+			return pm.Search(query)
 		})
 
 		if err != nil {
-			tui.PrintError(fmt.Sprintf("执行命令 %s 时出错:\n%v", pureCmdStr, err))
+			tui.PrintError(fmt.Sprintf("搜索出错:\n%v", err))
 			os.Exit(1)
 		}
 
-		dataList := res.([]SearchResult)
-		dataSize := len(dataList)
-		tui.PrintSuccess(pureCmdStr)
+		dataList := res.([]models.AppInfo)
 
-		if dataSize == 0 {
+		if len(dataList) == 0 {
 			tui.PrintWarning("没有匹配的搜索结果！")
 			os.Exit(0)
 		}
-		tui.PrintInfo(fmt.Sprintf("以下是: %s 的匹配结果,共 %d 条", query, dataSize))
 
-		maxNumLen := 1
-		maxNameLen := 0
-		maxVersionLen := 0
-		maxSourceLen := 0
-		maxBinariesLen := 0
-
-		for i, data := range dataList {
-			dataIndex := i + 1
-			dataList[i].Index = dataIndex
-			dataList[i].FullName = fmt.Sprintf("%s/%s", data.Source, data.Name)
-			dataName := data.Name
-			dataVersion := data.Version
-			dataSource := data.Source
-			cNameLen := len(dataName)
-			if cNameLen > maxNameLen {
-				maxNameLen = cNameLen
-			}
-			cVersionLen := len(dataVersion)
-			if cVersionLen > maxVersionLen {
-				maxVersionLen = cVersionLen
-			}
-			cSourceLen := len(dataSource)
-			if cSourceLen > maxSourceLen {
-				maxSourceLen = cSourceLen
-			}
-			cIndexLen := len(fmt.Sprintf("%d", dataIndex))
-			if cIndexLen > maxNumLen {
-				maxNumLen = cIndexLen
-			}
-			cBinariesLen := len(data.Binaries)
-			if cBinariesLen > maxBinariesLen {
-				maxBinariesLen = cBinariesLen
-			}
-
+		var items []list.Item
+		for _, v := range dataList {
+			// Create a local copy to avoid pointer sharing mechanics issues in range loop
+			app := v
+			items = append(items, app)
 		}
-		var optList []string
-		optMap := make(map[string]SearchResult)
-		for _, data := range dataList {
-			optLabel := fmt.Sprintf("%-*d | %-*s | %-*s | %-*s | %-*s", maxNumLen, data.Index, maxNameLen, data.Name, maxVersionLen, data.Version, maxSourceLen, data.Source, maxBinariesLen, data.Binaries)
-			optMap[optLabel] = data
-			optList = append(optList, optLabel)
-		}
-		
-		selOpt, err := tui.RunSingleSelect("选择一个应用程序进行安装(回车确认,Ctrl+C/q 取消)", optList)
+
+		results, err := tui.RunListInteractive("Search Results ("+config.GetActiveMode()+")", items, pm.Info)
+
+
 		if err != nil {
-			tui.PrintError(fmt.Sprintf("选择应用程序时出错: %v", err))
+			tui.PrintError(fmt.Sprintf("TUI Error: %v", err))
 			os.Exit(1)
 		}
 
-		selData := optMap[selOpt]
-		if selData.Index > -1 {
-			fullName := selData.FullName
-			tui.PrintInfo(fmt.Sprintf("您选择了: %s", fullName))
+		if len(results) > 0 {
+			cmdActions := []models.CmdAction{
+				{Command: "install", Desc: "安装选中的应用"},
+				{Command: "none", Desc: "什么也不做"},
+			}
 
-			setupCmd := exec.Command("scoop", "install", fullName)
-			setupCmdStr := strings.Join(setupCmd.Args, " ")
-			tui.PrintInfo(fmt.Sprintf("执行安装命令: %s", setupCmdStr))
+			options := []string{}
+			actionMap := make(map[string]models.CmdAction)
+			for _, action := range cmdActions {
+				label := fmt.Sprintf("%s (%s)", action.Command, action.Desc)
+				options = append(options, label)
+				actionMap[label] = action
+			}
 
-			setupCmd.Stdout = os.Stdout
-			setupCmd.Stderr = os.Stderr
-			err := setupCmd.Run()
+			selLabel, err := tui.RunSingleSelect("想要执行的操作是?", options)
 			if err != nil {
-				tui.PrintError(fmt.Sprintf("执行命令: %s 时出错:\n%v", setupCmdStr, err))
+				tui.PrintError(fmt.Sprintf("选择操作出错: %v", err))
 				os.Exit(1)
 			}
-			tui.PrintSuccess("执行完毕!")
-			tui.PrintInfo("==========相关命令==========")
-			fmt.Println("查看该应用程序: ")
-			fmt.Println("scoop info " + fullName)
-			fmt.Println("卸载该应用程序: ")
-			fmt.Println("scoop uninstall " + fullName)
+
+			action := actionMap[selLabel]
+			if action.Command == "none" {
+				return
+			}
+
+			if action.Command == "install" {
+				var names []string
+				for _, item := range results {
+					if choice, ok := item.(models.AppInfo); ok {
+						names = append(names, choice.FullName())
+					}
+				}
+
+				if len(names) == 0 {
+					return
+				}
+
+				// Confirm if multiselect
+				if len(names) > 1 {
+					fmt.Printf("⚠ 确认安装这 %d 个应用程序吗？(y/n): ", len(names))
+					var confirm string
+					fmt.Scanln(&confirm)
+					if strings.ToLower(confirm) != "y" {
+						tui.PrintInfo("已取消安装")
+						return
+					}
+				}
+
+				for _, name := range names {
+					tui.PrintInfo(fmt.Sprintf("正在安装: %s", name))
+					if err := pm.Install(name); err != nil {
+						tui.PrintError(fmt.Sprintf("安装 %s 失败: %v", name, err))
+					} else {
+						tui.PrintSuccess(fmt.Sprintf("安装 %s 成功!", name))
+					}
+				}
+			}
 		}
 
 	},
