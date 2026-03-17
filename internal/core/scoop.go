@@ -48,8 +48,9 @@ func (m *NativeScoopManager) Info(app string) (string, error) {
 	return runCommandOutput("scoop", "info", app)
 }
 
-func (m *NativeScoopManager) Update() error {
-	return runInteractiveCommand("scoop", "update")
+func (m *NativeScoopManager) Update(apps ...string) error {
+	args := append([]string{"update"}, apps...)
+	return runInteractiveCommand("scoop", args...)
 }
 
 func (m *NativeScoopManager) BucketList() ([]models.BucketResult, error) {

@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	docStyle         = lipgloss.NewStyle().Margin(1, 2)
+	docStyle         = lipgloss.NewStyle().Margin(0, 1)
 	detailTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true).MarginBottom(1)
 	detailLabelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("170")).Bold(true)
 	detailValueStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
@@ -40,8 +40,17 @@ type ListModel struct {
 
 
 func NewListModel(title string, items []list.Item, infoFunc func(string) (string, error)) ListModel {
-	m := list.New(items, list.NewDefaultDelegate(), 0, 0)
+	d := list.NewDefaultDelegate()
+	d.ShowDescription = true
+	d.SetHeight(2) // Default is 2 lines for title+desc
+	d.SetSpacing(1) // Keep it readable
+
+	m := list.New(items, d, 0, 0)
 	m.Title = title
+	// Remove extra padding from the list itself
+	m.Styles.Title.MarginLeft(0)
+	m.Styles.PaginationStyle.PaddingLeft(0)
+	m.Styles.HelpStyle.PaddingLeft(0)
 	// Start in filtering mode for better search experience (fzf-like)
 	m.FilterInput.Placeholder = "Type to filter apps..."
 	m.SetFilteringEnabled(true)
@@ -215,9 +224,11 @@ func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		h, v := docStyle.GetFrameSize()
-		m.list.SetSize(msg.Width-h, msg.Height-v)
-		// Try to show more items per page
-		m.list.SetHeight(msg.Height - v)
+		// Calculate available height: Total - Margin(v) - Help(1) - Title(1) - Status(1)
+		// Actually bubbletea's list.Model handles its own sub-elements if SetSize is correct.
+		// However, we can fine-tune it.
+		listHeight := msg.Height - v
+		m.list.SetSize(msg.Width-h, listHeight)
 		detailValueStyle = detailValueStyle.Width(msg.Width - h - 4) // Adjust width for detail view
 
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/nyable/nyaru/internal/models"
+	"github.com/nyable/nyaru/internal/tui"
 	"github.com/nyable/nyaru/internal/utils"
 )
 
@@ -99,7 +100,17 @@ func (m *SfsuManager) Info(app string) (string, error) {
 	return runCommandOutput("sfsu", "info", app, "--json")
 }
 
-func (m *SfsuManager) Update() error {
+func (m *SfsuManager) Update(apps ...string) error {
+	if len(apps) > 0 {
+		args := append([]string{"update"}, apps...)
+		return runInteractiveCommand("scoop", args...)
+	}
+	// No args: Update both scoop and sfsu index
+	tui.PrintInfo("正在更新 Scoop 核心...")
+	if err := runInteractiveCommand("scoop", "update"); err != nil {
+		return err
+	}
+	tui.PrintInfo("正在更新 sfsu 索引...")
 	return runInteractiveCommand("sfsu", "update")
 }
 

@@ -10,7 +10,7 @@ type PackageManager interface {
 	Install(app string) error
 	Uninstall(app string) error
 	Info(app string) (string, error)
-	Update() error
+	Update(apps ...string) error
 	BucketList() ([]models.BucketResult, error)
 	BucketAdd(name, source string) error
 	BucketRemove(name string) error

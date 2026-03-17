@@ -23,14 +23,14 @@ var statusCmd = &cobra.Command{
 		res, err := tui.RunWithSpinner("正在列出可更新的应用程序...", func() (any, error) {
 			return pm.Status()
 		})
-		
+
 		if err != nil {
 			tui.PrintError(fmt.Sprintf("列出状态出错:\n%v", err))
 			os.Exit(1)
 		}
-		
+
 		dataList := res.([]models.AppInfo)
-		
+
 		if len(dataList) == 0 {
 			tui.PrintWarning("没有可更新的应用程序！")
 			os.Exit(0)
@@ -44,7 +44,6 @@ var statusCmd = &cobra.Command{
 		}
 
 		results, err := tui.RunListInteractive("Updatable Apps ("+config.GetActiveMode()+")", items, pm.Info)
-
 
 		if err != nil {
 			tui.PrintError(fmt.Sprintf("TUI Error: %v", err))
@@ -99,13 +98,11 @@ var statusCmd = &cobra.Command{
 					}
 				}
 
-				for _, name := range names {
-					tui.PrintInfo(fmt.Sprintf("正在更新: %s", name))
-					if err := pm.Install(name); err != nil {
-						tui.PrintError(fmt.Sprintf("更新 %s 失败: %v", name, err))
-					} else {
-						tui.PrintSuccess(fmt.Sprintf("更新 %s 成功!", name))
-					}
+				tui.PrintInfo(fmt.Sprintf("正在更新选中的 %d 个应用: %s", len(names), strings.Join(names, ", ")))
+				if err := pm.Update(names...); err != nil {
+					tui.PrintError(fmt.Sprintf("更新失败: %v", err))
+				} else {
+					tui.PrintSuccess("所有应用更新尝试已完成!")
 				}
 			}
 		}
