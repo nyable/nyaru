@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -20,108 +19,112 @@ var cacheListCmd = &cobra.Command{
 	Long:    `显示缓存内容`,
 	Aliases: []string{"ls", "show"},
 	Run: func(cmd *cobra.Command, args []string) {
-		pm := core.GetManager(config.GetActiveMode())
+		CacheAction()
+	},
+}
 
-		res, err := tui.RunWithSpinner("正在列出缓存内容", func() (any, error) {
-			return pm.CacheList()
-		})
+func CacheAction() {
+	pm := core.GetManager(config.GetActiveMode())
 
+	res, err := tui.RunWithSpinner("正在列出缓存内容", func() (any, error) {
+		return pm.CacheList()
+	})
+
+	if err != nil {
+		tui.PrintError(fmt.Sprintf("列出缓存内容出错:\n%v", err))
+		return
+	}
+
+	dataList := res.([]models.CacheResult)
+	if len(dataList) == 0 {
+		tui.PrintWarning("没有缓存！")
+		return
+	}
+
+	var totalSize int64
+	for _, item := range dataList {
+		totalSize += item.Length
+	}
+	formatTotal := utils.SizeToHumanRead(totalSize)
+
+	var items []list.Item
+	for i := range dataList {
+		items = append(items, dataList[i])
+	}
+
+	title := fmt.Sprintf("缓存列表 (共 %d 个文件, 总计 %s)", len(dataList), formatTotal)
+	results, err := tui.RunListInteractive(title, items, pm.Info)
+	if err != nil {
+		tui.PrintError(fmt.Sprintf("TUI Error: %v", err))
+		return
+	}
+
+	if len(results) > 0 {
+		cmdActions := []models.CmdAction{
+			{Command: "rm", Desc: "删除缓存"},
+			{Command: "none", Desc: "什么也不做"},
+		}
+
+		options := []string{}
+		actionMap := make(map[string]models.CmdAction)
+		for _, action := range cmdActions {
+			label := fmt.Sprintf("%s (%s)", action.Command, action.Desc)
+			options = append(options, label)
+			actionMap[label] = action
+		}
+
+		selLabel, err := tui.RunSingleSelect("想要进行的操作是?", options)
 		if err != nil {
-			tui.PrintError(fmt.Sprintf("列出缓存内容出错:\n%v", err))
-			os.Exit(1)
+			tui.PrintError(fmt.Sprintf("选择操作出错: %v", err))
+			return
 		}
 
-		dataList := res.([]models.CacheResult)
-		if len(dataList) == 0 {
-			tui.PrintWarning("没有缓存！")
-			os.Exit(0)
+		action := actionMap[selLabel]
+		if action.Command == "none" {
+			return
 		}
 
-		var totalSize int64
-		for _, item := range dataList {
-			totalSize += item.Length
-		}
-		formatTotal := utils.SizeToHumanRead(totalSize)
-
-		var items []list.Item
-		for i := range dataList {
-			items = append(items, dataList[i])
-		}
-
-		title := fmt.Sprintf("缓存列表 (共 %d 个文件, 总计 %s)", len(dataList), formatTotal)
-		results, err := tui.RunListInteractive(title, items, pm.Info)
-		if err != nil {
-			tui.PrintError(fmt.Sprintf("TUI Error: %v", err))
-			os.Exit(1)
-		}
-
-		if len(results) > 0 {
-			cmdActions := []models.CmdAction{
-				{Command: "rm", Desc: "删除缓存"},
-				{Command: "none", Desc: "什么也不做"},
+		if action.Command == "rm" {
+			var names []string
+			for _, item := range results {
+				if cache, ok := item.(models.CacheResult); ok {
+					names = append(names, cache.Name)
+				}
 			}
 
-			options := []string{}
-			actionMap := make(map[string]models.CmdAction)
-			for _, action := range cmdActions {
-				label := fmt.Sprintf("%s (%s)", action.Command, action.Desc)
-				options = append(options, label)
-				actionMap[label] = action
-			}
-
-			selLabel, err := tui.RunSingleSelect("想要进行的操作是?", options)
-			if err != nil {
-				tui.PrintError(fmt.Sprintf("选择操作出错: %v", err))
-				os.Exit(1)
-			}
-
-			action := actionMap[selLabel]
-			if action.Command == "none" {
+			if len(names) == 0 {
 				return
 			}
 
-			if action.Command == "rm" {
-				var names []string
-				for _, item := range results {
-					if cache, ok := item.(models.CacheResult); ok {
-						names = append(names, cache.Name)
-					}
-				}
-
-				if len(names) == 0 {
+			// confirm if multiselect
+			if len(names) > 1 {
+				fmt.Printf("⚠ 确认删除这 %d 个缓存文件吗？(y/n): ", len(names))
+				var confirm string
+				fmt.Scanln(&confirm)
+				if strings.ToLower(confirm) != "y" {
+					tui.PrintInfo("已取消删除")
 					return
 				}
+			}
 
-				// confirm if multiselect
-				if len(names) > 1 {
-					fmt.Printf("⚠ 确认删除这 %d 个缓存文件吗？(y/n): ", len(names))
-					var confirm string
-					fmt.Scanln(&confirm)
-					if strings.ToLower(confirm) != "y" {
-						tui.PrintInfo("已取消删除")
-						return
-					}
-				}
-
-				// Optimization: if all items selected, use '*'
-				if len(names) == len(dataList) {
-					tui.PrintInfo("正在清理所有缓存...")
-					if err := pm.CacheRemove("*"); err != nil {
-						tui.PrintError(fmt.Sprintf("清理失败: %v", err))
-					} else {
-						tui.PrintSuccess("所有缓存已清理!")
-					}
+			// Optimization: if all items selected, use '*'
+			if len(names) == len(dataList) {
+				tui.PrintInfo("正在清理所有缓存...")
+				if err := pm.CacheRemove("*"); err != nil {
+					tui.PrintError(fmt.Sprintf("清理失败: %v", err))
 				} else {
-					tui.PrintInfo(fmt.Sprintf("正在批量删除 %d 个缓存...", len(names)))
-					if err := pm.CacheRemove(names...); err != nil {
-						tui.PrintError(fmt.Sprintf("批量删除失败: %v", err))
-					} else {
-						tui.PrintSuccess(fmt.Sprintf("已成功删除 %d 个缓存!", len(names)))
-					}
+					tui.PrintSuccess("所有缓存已清理!")
+				}
+			} else {
+				tui.PrintInfo(fmt.Sprintf("正在批量删除 %d 个缓存...", len(names)))
+				if err := pm.CacheRemove(names...); err != nil {
+					tui.PrintError(fmt.Sprintf("批量删除失败: %v", err))
+				} else {
+					tui.PrintSuccess(fmt.Sprintf("已成功删除 %d 个缓存!", len(names)))
 				}
 			}
 		}
-	},
+	}
 }
 
 var cacheCmd = &cobra.Command{
@@ -129,7 +132,7 @@ var cacheCmd = &cobra.Command{
 	Short: "缓存管理",
 	Long:  `缓存管理`,
 	Run: func(cmd *cobra.Command, args []string) {
-		cacheListCmd.Run(cmd, args)
+		CacheAction()
 	},
 }
 

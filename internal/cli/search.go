@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -21,29 +20,32 @@ var searchCmd = &cobra.Command{
 	Aliases: []string{"find", "query", "s"},
 	Args:    cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-
 		var query string
 		if len(args) > 0 {
 			query = args[0]
 		}
+		SearchAction(query)
+	},
+}
 
-		pm := core.GetManager(config.GetActiveMode())
+func SearchAction(query string) {
+	pm := core.GetManager(config.GetActiveMode())
 
-		res, err := tui.RunWithSpinner("正在搜索中...", func() (any, error) {
-			return pm.Search(query)
-		})
+	res, err := tui.RunWithSpinner("正在搜索中...", func() (any, error) {
+		return pm.Search(query)
+	})
 
-		if err != nil {
-			tui.PrintError(fmt.Sprintf("搜索出错:\n%v", err))
-			os.Exit(1)
-		}
+	if err != nil {
+		tui.PrintError(fmt.Sprintf("搜索出错:\n%v", err))
+		return
+	}
 
-		dataList := res.([]models.AppInfo)
+	dataList := res.([]models.AppInfo)
 
-		if len(dataList) == 0 {
-			tui.PrintWarning("没有匹配的搜索结果！")
-			os.Exit(0)
-		}
+	if len(dataList) == 0 {
+		tui.PrintWarning("没有匹配的搜索结果！")
+		return
+	}
 
 		var items []list.Item
 		for _, v := range dataList {
@@ -55,10 +57,10 @@ var searchCmd = &cobra.Command{
 		results, err := tui.RunListInteractive("Search Results ("+config.GetActiveMode()+")", items, pm.Info)
 
 
-		if err != nil {
-			tui.PrintError(fmt.Sprintf("TUI Error: %v", err))
-			os.Exit(1)
-		}
+	if err != nil {
+		tui.PrintError(fmt.Sprintf("TUI Error: %v", err))
+		return
+	}
 
 		if len(results) > 0 {
 			cmdActions := []models.CmdAction{
@@ -77,7 +79,7 @@ var searchCmd = &cobra.Command{
 			selLabel, err := tui.RunSingleSelect("想要执行的操作是?", options)
 			if err != nil {
 				tui.PrintError(fmt.Sprintf("选择操作出错: %v", err))
-				os.Exit(1)
+				return
 			}
 
 			action := actionMap[selLabel]
@@ -119,7 +121,6 @@ var searchCmd = &cobra.Command{
 			}
 		}
 
-	},
 }
 
 func init() {

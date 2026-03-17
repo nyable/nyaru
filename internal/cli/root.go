@@ -15,6 +15,9 @@ var rootCmd = &cobra.Command{
 }
 
 func Execute() {
+	if len(os.Args) == 1 {
+		os.Args = append(os.Args, "interactive")
+	}
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
