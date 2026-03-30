@@ -31,6 +31,11 @@ var interactiveCmd = &cobra.Command{
 				var query string
 				fmt.Scanln(&query)
 				SearchAction(query)
+			case "Info":
+				fmt.Print("输入要查看的应用名: ")
+				var appName string
+				fmt.Scanln(&appName)
+				InfoAction(appName)
 			case "List":
 				ListAction()
 			case "Status":

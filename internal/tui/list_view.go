@@ -323,85 +323,7 @@ func (m ListModel) View() string {
 			view += renderDetailLine("Manifests", fmt.Sprintf("%d", b.Manifests)) + "\n"
 			view += renderDetailLine("Updated", b.Updated.DateTime) + "\n"
 		} else if m.infoContent != "" {
-			// Define the fields we want to display
-			fields := []struct {
-				Key    string
-				Labels []string // Possible keys in JSON or plain text
-			}{
-				{"Name", []string{"name", "Name"}},
-				{"Description", []string{"description", "Description"}},
-				{"Version", []string{"version", "Version"}},
-				{"Bucket", []string{"bucket", "Source", "Bucket"}},
-				{"Website", []string{"website", "Website"}},
-				{"License", []string{"license", "License"}},
-				{"Binaries", []string{"binaries", "Binaries"}},
-				{"Notes", []string{"notes", "Notes"}},
-			}
-
-			// Try to parse as JSON first (sfsu)
-			var jsonMap map[string]interface{}
-			isJSON := json.Unmarshal([]byte(m.infoContent), &jsonMap) == nil
-
-			if isJSON {
-				for _, f := range fields {
-					val := ""
-					for _, label := range f.Labels {
-						if v, ok := jsonMap[label]; ok && v != nil {
-							val = fmt.Sprintf("%v", v)
-							break
-						}
-					}
-					if f.Key == "Notes" {
-						if val != "" {
-							view += "\n" + detailLabelStyle.Render("Notes:") + "\n" + detailValueStyle.Render(val) + "\n"
-						}
-					} else {
-						view += renderDetailLine(f.Key, val) + "\n"
-					}
-				}
-			} else {
-				// Parse plain text (scoop)
-				lines := strings.Split(m.infoContent, "\n")
-				data := make(map[string]string)
-				var currentKey string
-				var currentVal strings.Builder
-
-				for _, line := range lines {
-					if strings.Contains(line, " : ") {
-						// Save previous
-						if currentKey != "" {
-							data[currentKey] = strings.TrimSpace(currentVal.String())
-						}
-						parts := strings.SplitN(line, " : ", 2)
-						currentKey = strings.TrimSpace(parts[0])
-						currentVal.Reset()
-						currentVal.WriteString(parts[1])
-					} else if currentKey != "" && strings.HasPrefix(line, "              ") {
-						currentVal.WriteString("\n")
-						currentVal.WriteString(strings.TrimSpace(line))
-					}
-				}
-				if currentKey != "" {
-					data[currentKey] = strings.TrimSpace(currentVal.String())
-				}
-
-				for _, f := range fields {
-					val := ""
-					for _, label := range f.Labels {
-						if v, ok := data[label]; ok {
-							val = v
-							break
-						}
-					}
-					if f.Key == "Notes" {
-						if val != "" {
-							view += "\n" + detailLabelStyle.Render("Notes:") + "\n" + detailValueStyle.Render(val) + "\n"
-						}
-					} else {
-						view += renderDetailLine(f.Key, val) + "\n"
-					}
-				}
-			}
+			view += FormatInfoContent(m.infoContent)
 		} else {
 			if i, ok := m.selectedItem.(models.AppInfo); ok {
 				lines := []string{
@@ -443,6 +365,91 @@ func (m ListModel) View() string {
 
 
 	return ""
+}
+
+// FormatInfoContent parses and formats raw info output (JSON or plain text) into styled lines.
+func FormatInfoContent(rawContent string) string {
+	fields := []struct {
+		Key    string
+		Labels []string
+	}{
+		{"Name", []string{"name", "Name"}},
+		{"Description", []string{"description", "Description"}},
+		{"Version", []string{"version", "Version"}},
+		{"Bucket", []string{"bucket", "Source", "Bucket"}},
+		{"Website", []string{"website", "Website"}},
+		{"License", []string{"license", "License"}},
+		{"Binaries", []string{"binaries", "Binaries"}},
+		{"Notes", []string{"notes", "Notes"}},
+	}
+
+	var result string
+
+	// Try to parse as JSON first (sfsu)
+	var jsonMap map[string]interface{}
+	isJSON := json.Unmarshal([]byte(rawContent), &jsonMap) == nil
+
+	if isJSON {
+		for _, f := range fields {
+			val := ""
+			for _, label := range f.Labels {
+				if v, ok := jsonMap[label]; ok && v != nil {
+					val = fmt.Sprintf("%v", v)
+					break
+				}
+			}
+			if f.Key == "Notes" {
+				if val != "" {
+					result += "\n" + detailLabelStyle.Render("Notes:") + "\n" + detailValueStyle.Render(val) + "\n"
+				}
+			} else {
+				result += renderDetailLine(f.Key, val) + "\n"
+			}
+		}
+	} else {
+		// Parse plain text (scoop)
+		lines := strings.Split(rawContent, "\n")
+		data := make(map[string]string)
+		var currentKey string
+		var currentVal strings.Builder
+
+		for _, line := range lines {
+			if strings.Contains(line, " : ") {
+				if currentKey != "" {
+					data[currentKey] = strings.TrimSpace(currentVal.String())
+				}
+				parts := strings.SplitN(line, " : ", 2)
+				currentKey = strings.TrimSpace(parts[0])
+				currentVal.Reset()
+				currentVal.WriteString(parts[1])
+			} else if currentKey != "" && strings.HasPrefix(line, "              ") {
+				currentVal.WriteString("\n")
+				currentVal.WriteString(strings.TrimSpace(line))
+			}
+		}
+		if currentKey != "" {
+			data[currentKey] = strings.TrimSpace(currentVal.String())
+		}
+
+		for _, f := range fields {
+			val := ""
+			for _, label := range f.Labels {
+				if v, ok := data[label]; ok {
+					val = v
+					break
+				}
+			}
+			if f.Key == "Notes" {
+				if val != "" {
+					result += "\n" + detailLabelStyle.Render("Notes:") + "\n" + detailValueStyle.Render(val) + "\n"
+				}
+			} else {
+				result += renderDetailLine(f.Key, val) + "\n"
+			}
+		}
+	}
+
+	return result
 }
 
 func renderListHelp() string {

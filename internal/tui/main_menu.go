@@ -31,6 +31,7 @@ type MainMenuModel struct {
 func NewMainMenuModel() MainMenuModel {
 	items := []list.Item{
 		MenuOption{TitleStr: "Search", DescStr: "搜索可安装的应用 (search)"},
+		MenuOption{TitleStr: "Info", DescStr: "查看应用详细信息 (info)"},
 		MenuOption{TitleStr: "List", DescStr: "列出已安装的应用 (list)"},
 		MenuOption{TitleStr: "Status", DescStr: "检查可更新的应用 (status)"},
 		MenuOption{TitleStr: "Update All", DescStr: "更新所有应用 (update)"},
