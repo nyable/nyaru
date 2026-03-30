@@ -95,6 +95,55 @@ func BucketAction() {
 	}
 }
 
+var bucketAddCmd = &cobra.Command{
+	Use:     "add <name> [source]",
+	Short:   "添加存储桶",
+	Long:    `添加一个 Scoop 存储桶。官方桶只需名称，第三方桶需要提供 git 地址。`,
+	Example: `  nyaru bucket add extras
+  nyaru bucket add my-bucket https://github.com/user/my-bucket`,
+	Args: cobra.RangeArgs(1, 2),
+	Run: func(cmd *cobra.Command, args []string) {
+		name := args[0]
+		source := ""
+		if len(args) > 1 {
+			source = args[1]
+		}
+		BucketAddAction(name, source)
+	},
+}
+
+func BucketAddAction(name, source string) {
+	pm := core.GetManager(config.GetActiveMode())
+	tui.PrintInfo(fmt.Sprintf("正在添加存储桶: %s", name))
+	if err := pm.BucketAdd(name, source); err != nil {
+		tui.PrintError(fmt.Sprintf("添加存储桶 %s 失败: %v", name, err))
+	} else {
+		tui.PrintSuccess(fmt.Sprintf("添加存储桶 %s 成功!", name))
+	}
+}
+
+var bucketRemoveCmd = &cobra.Command{
+	Use:     "rm <name>",
+	Short:   "删除存储桶(别名:remove)",
+	Long:    `删除一个已添加的 Scoop 存储桶。`,
+	Example: `  nyaru bucket rm extras`,
+	Aliases: []string{"remove"},
+	Args:    cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		BucketRemoveAction(args[0])
+	},
+}
+
+func BucketRemoveAction(name string) {
+	pm := core.GetManager(config.GetActiveMode())
+	tui.PrintInfo(fmt.Sprintf("正在删除存储桶: %s", name))
+	if err := pm.BucketRemove(name); err != nil {
+		tui.PrintError(fmt.Sprintf("删除存储桶 %s 失败: %v", name, err))
+	} else {
+		tui.PrintSuccess(fmt.Sprintf("删除存储桶 %s 成功!", name))
+	}
+}
+
 var bucketCmd = &cobra.Command{
 	Use:     "bucket",
 	Short:   "管理Scoop存储桶(别名:bt)",
@@ -107,5 +156,8 @@ var bucketCmd = &cobra.Command{
 
 func init() {
 	bucketCmd.AddCommand(bucketListCmd)
+	bucketCmd.AddCommand(bucketAddCmd)
+	bucketCmd.AddCommand(bucketRemoveCmd)
 	rootCmd.AddCommand(bucketCmd)
 }
+
