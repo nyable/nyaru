@@ -65,6 +65,14 @@ func (m *NativeScoopManager) BucketAdd(name, source string) error {
 	return runInteractiveCommand("scoop", "bucket", "add", name, source)
 }
 
+func (m *NativeScoopManager) Hold(app string) error {
+	return runInteractiveCommand("scoop", "hold", app)
+}
+
+func (m *NativeScoopManager) Unhold(app string) error {
+	return runInteractiveCommand("scoop", "unhold", app)
+}
+
 func (m *NativeScoopManager) BucketRemove(name string) error {
 	return runInteractiveCommand("scoop", "bucket", "rm", name)
 }

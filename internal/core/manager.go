@@ -11,6 +11,8 @@ type PackageManager interface {
 	Uninstall(app string) error
 	Info(app string) (string, error)
 	Update(apps ...string) error
+	Hold(app string) error
+	Unhold(app string) error
 	BucketList() ([]models.BucketResult, error)
 	BucketAdd(name, source string) error
 	BucketRemove(name string) error

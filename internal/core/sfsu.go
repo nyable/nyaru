@@ -133,6 +133,14 @@ func (m *SfsuManager) BucketRemove(name string) error {
 	return runInteractiveCommand("scoop", "bucket", "rm", name)
 }
 
+func (m *SfsuManager) Hold(app string) error {
+	return runInteractiveCommand("scoop", "hold", app)
+}
+
+func (m *SfsuManager) Unhold(app string) error {
+	return runInteractiveCommand("scoop", "unhold", app)
+}
+
 func (m *SfsuManager) CacheList() ([]models.CacheResult, error) {
 	// sfsu doesn't support cache show --json yet, fallback to native scoop parsing
 	output, _, err := utils.RunWithPowerShellCombined("powershell", "-Command", "scoop cache show")
