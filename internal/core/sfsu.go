@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/nyable/nyaru/internal/models"
 	"github.com/nyable/nyaru/internal/tui"
@@ -10,6 +11,7 @@ import (
 )
 
 type SfsuManager struct {
+	Mu         sync.Mutex
 	LastStderr string
 }
 
@@ -19,7 +21,9 @@ func NewSfsuManager() *SfsuManager {
 
 func (m *SfsuManager) runSfsuQueryList(action, query string) ([]models.AppInfo, error) {
 	stdout, stderr, _, isSfsu, err := utils.RunHookedCommand(action, query)
+	m.Mu.Lock()
 	m.LastStderr = stderr
+	m.Mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
@@ -31,7 +35,9 @@ func (m *SfsuManager) runSfsuQueryList(action, query string) ([]models.AppInfo, 
 
 func (m *SfsuManager) Search(query string) ([]models.AppInfo, error) {
 	stdout, stderr, _, isSfsu, err := utils.RunHookedCommand("search", query)
+	m.Mu.Lock()
 	m.LastStderr = stderr
+	m.Mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +67,9 @@ func (m *SfsuManager) List() ([]models.AppInfo, error) {
 
 func (m *SfsuManager) Status() ([]models.AppInfo, error) {
 	stdout, stderr, _, isSfsu, err := utils.RunHookedCommand("status", "")
+	m.Mu.Lock()
 	m.LastStderr = stderr
+	m.Mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +129,9 @@ func (m *SfsuManager) Update(apps ...string) error {
 
 func (m *SfsuManager) BucketList() ([]models.BucketResult, error) {
 	stdout, stderr, _, isSfsu, err := utils.RunHookedCommand("bucket list", "")
+	m.Mu.Lock()
 	m.LastStderr = stderr
+	m.Mu.Unlock()
 	if err != nil {
 		return nil, err
 	}

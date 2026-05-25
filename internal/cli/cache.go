@@ -30,6 +30,16 @@ func CacheAction() {
 		return pm.CacheList()
 	})
 
+	// Show stderr feedback after spinner exits
+	if sfsuMgr, ok := pm.(*core.SfsuManager); ok {
+		sfsuMgr.Mu.Lock()
+		stderr := sfsuMgr.LastStderr
+		sfsuMgr.Mu.Unlock()
+		if stderr != "" {
+			tui.PrintWarning(stderr)
+		}
+	}
+
 	if err != nil {
 		tui.PrintError(fmt.Sprintf("列出缓存内容出错:\n%v", err))
 		return

@@ -35,6 +35,16 @@ func SearchAction(query string) {
 		return pm.Search(query)
 	})
 
+	// Show stderr feedback after spinner exits
+	if sfsuMgr, ok := pm.(*core.SfsuManager); ok {
+		sfsuMgr.Mu.Lock()
+		stderr := sfsuMgr.LastStderr
+		sfsuMgr.Mu.Unlock()
+		if stderr != "" {
+			tui.PrintWarning(stderr)
+		}
+	}
+
 	if err != nil {
 		tui.PrintError(fmt.Sprintf("搜索出错:\n%v", err))
 		return
@@ -47,80 +57,77 @@ func SearchAction(query string) {
 		return
 	}
 
-		var items []list.Item
-		for _, v := range dataList {
-			// Create a local copy to avoid pointer sharing mechanics issues in range loop
-			app := v
-			items = append(items, app)
-		}
+	var items []list.Item
+	for _, v := range dataList {
+		app := v
+		items = append(items, app)
+	}
 
-		results, err := tui.RunListInteractive("Search Results ("+config.GetActiveMode()+")", items, pm.Info)
-
+	results, err := tui.RunListInteractive("Search Results ("+config.GetActiveMode()+")", items, pm.Info)
 
 	if err != nil {
 		tui.PrintError(fmt.Sprintf("TUI Error: %v", err))
 		return
 	}
 
-		if len(results) > 0 {
-			cmdActions := []models.CmdAction{
-				{Command: "install", Desc: "安装选中的应用"},
-				{Command: "none", Desc: "什么也不做"},
-			}
+	if len(results) > 0 {
+		cmdActions := []models.CmdAction{
+			{Command: "install", Desc: "安装选中的应用"},
+			{Command: "none", Desc: "什么也不做"},
+		}
 
-			options := []string{}
-			actionMap := make(map[string]models.CmdAction)
-			for _, action := range cmdActions {
-				label := fmt.Sprintf("%s (%s)", action.Command, action.Desc)
-				options = append(options, label)
-				actionMap[label] = action
-			}
+		options := []string{}
+		actionMap := make(map[string]models.CmdAction)
+		for _, action := range cmdActions {
+			label := fmt.Sprintf("%s (%s)", action.Command, action.Desc)
+			options = append(options, label)
+			actionMap[label] = action
+		}
 
-			selLabel, err := tui.RunSingleSelect("想要执行的操作是?", options)
-			if err != nil {
-				tui.PrintError(fmt.Sprintf("选择操作出错: %v", err))
-				return
-			}
+		selLabel, err := tui.RunSingleSelect("想要执行的操作是?", options)
+		if err != nil {
+			tui.PrintError(fmt.Sprintf("选择操作出错: %v", err))
+			return
+		}
 
-			action := actionMap[selLabel]
-			if action.Command == "none" {
-				return
-			}
+		action := actionMap[selLabel]
+		if action.Command == "none" {
+			return
+		}
 
-			if action.Command == "install" {
-				var names []string
-				for _, item := range results {
-					if choice, ok := item.(models.AppInfo); ok {
-						names = append(names, choice.FullName())
-					}
+		if action.Command == "install" {
+			var names []string
+			for _, item := range results {
+				if choice, ok := item.(models.AppInfo); ok {
+					names = append(names, choice.FullName())
 				}
+			}
 
-				if len(names) == 0 {
+			if len(names) == 0 {
+				return
+			}
+
+			// Confirm if multiselect
+			if len(names) > 1 {
+				fmt.Printf("⚠ 确认安装这 %d 个应用程序吗？(y/n): ", len(names))
+				var confirm string
+				fmt.Scanln(&confirm)
+				if strings.ToLower(confirm) != "y" {
+					tui.PrintInfo("已取消安装")
 					return
 				}
+			}
 
-				// Confirm if multiselect
-				if len(names) > 1 {
-					fmt.Printf("⚠ 确认安装这 %d 个应用程序吗？(y/n): ", len(names))
-					var confirm string
-					fmt.Scanln(&confirm)
-					if strings.ToLower(confirm) != "y" {
-						tui.PrintInfo("已取消安装")
-						return
-					}
-				}
-
-				for _, name := range names {
-					tui.PrintInfo(fmt.Sprintf("正在安装: %s", name))
-					if err := pm.Install(name); err != nil {
-						tui.PrintError(fmt.Sprintf("安装 %s 失败: %v", name, err))
-					} else {
-						tui.PrintSuccess(fmt.Sprintf("安装 %s 成功!", name))
-					}
+			for _, name := range names {
+				tui.PrintInfo(fmt.Sprintf("正在安装: %s", name))
+				if err := pm.Install(name); err != nil {
+					tui.PrintError(fmt.Sprintf("安装 %s 失败: %v", name, err))
+				} else {
+					tui.PrintSuccess(fmt.Sprintf("安装 %s 成功!", name))
 				}
 			}
 		}
-
+	}
 }
 
 func init() {
