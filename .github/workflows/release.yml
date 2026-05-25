@@ -26,7 +26,9 @@ jobs:
       - name: Download Go modules
         run: go mod download
       - name: Build for Windows (AMD64)
-        run: GOOS=windows GOARCH=amd64 go build -o nyaru.exe ./cmd/nyaru
+        run: |
+          TAG_NAME=${{ github.ref_name }}
+          GOOS=windows GOARCH=amd64 go build -ldflags "-X github.com/nyable/nyaru/internal/cli.AppVersion=${TAG_NAME#v}" -o nyaru.exe ./cmd/nyaru
       - name: Calculate Artifact Hashes
         id: calculate_hashes
         run: |
