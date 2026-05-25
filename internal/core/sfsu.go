@@ -9,25 +9,29 @@ import (
 	"github.com/nyable/nyaru/internal/utils"
 )
 
-type SfsuManager struct{}
+type SfsuManager struct {
+	LastStderr string
+}
 
 func NewSfsuManager() *SfsuManager {
 	return &SfsuManager{}
 }
 
 func (m *SfsuManager) runSfsuQueryList(action, query string) ([]models.AppInfo, error) {
-	strOutput, _, isSfsu, err := utils.RunHookedCommand(action, query)
+	stdout, stderr, _, isSfsu, err := utils.RunHookedCommand(action, query)
+	m.LastStderr = stderr
 	if err != nil {
 		return nil, err
 	}
 	if !isSfsu {
 		return nil, fmt.Errorf("sfsu fallback to scoop unexpectedly")
 	}
-	return utils.StandardJSONToStructList[models.AppInfo](strOutput)
+	return utils.StandardJSONToStructList[models.AppInfo](stdout)
 }
 
 func (m *SfsuManager) Search(query string) ([]models.AppInfo, error) {
-	strOutput, _, isSfsu, err := utils.RunHookedCommand("search", query)
+	stdout, stderr, _, isSfsu, err := utils.RunHookedCommand("search", query)
+	m.LastStderr = stderr
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +41,7 @@ func (m *SfsuManager) Search(query string) ([]models.AppInfo, error) {
 
 	// sfsu search returns a map: bucket_name -> []AppInfo
 	var result map[string][]models.AppInfo
-	if err := json.Unmarshal([]byte(strOutput), &result); err != nil {
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
 		return nil, fmt.Errorf("failed to parse sfsu search output: %w", err)
 	}
 
@@ -56,7 +60,8 @@ func (m *SfsuManager) List() ([]models.AppInfo, error) {
 }
 
 func (m *SfsuManager) Status() ([]models.AppInfo, error) {
-	strOutput, _, isSfsu, err := utils.RunHookedCommand("status", "")
+	stdout, stderr, _, isSfsu, err := utils.RunHookedCommand("status", "")
+	m.LastStderr = stderr
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +78,7 @@ func (m *SfsuManager) Status() ([]models.AppInfo, error) {
 		} `json:"packages"`
 	}
 
-	if err := json.Unmarshal([]byte(strOutput), &result); err != nil {
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
 		return nil, fmt.Errorf("failed to parse sfsu status output: %w", err)
 	}
 
@@ -115,14 +120,15 @@ func (m *SfsuManager) Update(apps ...string) error {
 }
 
 func (m *SfsuManager) BucketList() ([]models.BucketResult, error) {
-	strOutput, _, isSfsu, err := utils.RunHookedCommand("bucket list", "")
+	stdout, stderr, _, isSfsu, err := utils.RunHookedCommand("bucket list", "")
+	m.LastStderr = stderr
 	if err != nil {
 		return nil, err
 	}
 	if isSfsu {
-		return utils.StandardJSONToStructList[models.BucketResult](strOutput)
+		return utils.StandardJSONToStructList[models.BucketResult](stdout)
 	}
-	return utils.PsDirtyJSONToStructList[models.BucketResult](strOutput)
+	return utils.PsDirtyJSONToStructList[models.BucketResult](stdout)
 }
 
 func (m *SfsuManager) BucketAdd(name, source string) error {

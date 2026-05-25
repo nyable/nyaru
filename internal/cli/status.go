@@ -28,6 +28,11 @@ func StatusAction() {
 		return pm.Status()
 	})
 
+	// Show stderr feedback after spinner exits
+	if sfsuMgr, ok := pm.(*core.SfsuManager); ok && sfsuMgr.LastStderr != "" {
+		tui.PrintWarning(sfsuMgr.LastStderr)
+	}
+
 	if err != nil {
 		tui.PrintError(fmt.Sprintf("列出状态出错:\n%v", err))
 		return

@@ -12,28 +12,28 @@ func NewNativeScoopManager() *NativeScoopManager {
 }
 
 func (m *NativeScoopManager) Search(query string) ([]models.AppInfo, error) {
-	strOutput, _, _, err := utils.RunHookedCommand("search", query)
+	stdout, _, _, _, err := utils.RunHookedCommand("search", query)
 	if err != nil {
 		return nil, err
 	}
 	// Parse powershell output into models.AppInfo
-	return utils.PsDirtyJSONToStructList[models.AppInfo](strOutput)
+	return utils.PsDirtyJSONToStructList[models.AppInfo](stdout)
 }
 
 func (m *NativeScoopManager) List() ([]models.AppInfo, error) {
-	strOutput, _, _, err := utils.RunHookedCommand("list", "")
+	stdout, _, _, _, err := utils.RunHookedCommand("list", "")
 	if err != nil {
 		return nil, err
 	}
-	return utils.PsDirtyJSONToStructList[models.AppInfo](strOutput)
+	return utils.PsDirtyJSONToStructList[models.AppInfo](stdout)
 }
 
 func (m *NativeScoopManager) Status() ([]models.AppInfo, error) {
-	strOutput, _, _, err := utils.RunHookedCommand("status", "")
+	stdout, _, _, _, err := utils.RunHookedCommand("status", "")
 	if err != nil {
 		return nil, err
 	}
-	return utils.PsDirtyJSONToStructList[models.AppInfo](strOutput)
+	return utils.PsDirtyJSONToStructList[models.AppInfo](stdout)
 }
 
 func (m *NativeScoopManager) Install(app string) error {
@@ -54,11 +54,11 @@ func (m *NativeScoopManager) Update(apps ...string) error {
 }
 
 func (m *NativeScoopManager) BucketList() ([]models.BucketResult, error) {
-	strOutput, _, _, err := utils.RunHookedCommand("bucket list", "")
+	stdout, _, _, _, err := utils.RunHookedCommand("bucket list", "")
 	if err != nil {
 		return nil, err
 	}
-	return utils.PsDirtyJSONToStructList[models.BucketResult](strOutput)
+	return utils.PsDirtyJSONToStructList[models.BucketResult](stdout)
 }
 
 func (m *NativeScoopManager) BucketAdd(name, source string) error {
