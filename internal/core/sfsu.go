@@ -1,178 +1,101 @@
 package core
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
-	"sync"
+	"strings"
 
+	"github.com/nyable/nyaru/internal/core/parse"
 	"github.com/nyable/nyaru/internal/models"
-	"github.com/nyable/nyaru/internal/tui"
-	"github.com/nyable/nyaru/internal/utils"
 )
 
-type SfsuManager struct {
-	Mu         sync.Mutex
-	LastStderr string
+// SfsuBackend uses sfsu for fast read paths and delegates writes to scoop.
+type SfsuBackend struct {
+	*ScoopBackend
+	runner *Runner
 }
 
-func NewSfsuManager() *SfsuManager {
-	return &SfsuManager{}
+func NewSfsuBackend(runner *Runner) *SfsuBackend {
+	return &SfsuBackend{
+		ScoopBackend: NewScoopBackend(runner),
+		runner:       runner,
+	}
 }
 
-func (m *SfsuManager) runSfsuQueryList(action, query string) ([]models.AppInfo, error) {
-	stdout, stderr, _, isSfsu, err := utils.RunHookedCommand(action, query)
-	m.Mu.Lock()
-	m.LastStderr = stderr
-	m.Mu.Unlock()
+func (b *SfsuBackend) Name() string { return "sfsu" }
+
+func (b *SfsuBackend) Search(ctx context.Context, query string) ([]models.AppInfo, error) {
+	raw, err := b.runner.SfsuJSON(ctx, "search", query)
 	if err != nil {
 		return nil, err
 	}
-	if !isSfsu {
-		return nil, fmt.Errorf("sfsu fallback to scoop unexpectedly")
-	}
-	return utils.StandardJSONToStructList[models.AppInfo](stdout)
+	return parse.SfsuSearch(raw)
 }
 
-func (m *SfsuManager) Search(query string) ([]models.AppInfo, error) {
-	stdout, stderr, _, isSfsu, err := utils.RunHookedCommand("search", query)
-	m.Mu.Lock()
-	m.LastStderr = stderr
-	m.Mu.Unlock()
+func (b *SfsuBackend) List(ctx context.Context, query string) ([]models.AppInfo, error) {
+	raw, err := b.runner.SfsuJSON(ctx, "list")
 	if err != nil {
 		return nil, err
 	}
-	if !isSfsu {
-		return nil, fmt.Errorf("sfsu fallback to scoop unexpectedly")
+	apps, err := parse.List[models.AppInfo](raw)
+	if err != nil {
+		return nil, err
 	}
-
-	// sfsu search returns a map: bucket_name -> []AppInfo
-	var result map[string][]models.AppInfo
-	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
-		return nil, fmt.Errorf("failed to parse sfsu search output: %w", err)
-	}
-
-	var flatList []models.AppInfo
-	for bucket, apps := range result {
-		for i := range apps {
-			apps[i].Bucket = bucket
+	filtered := make([]models.AppInfo, 0, len(apps))
+	q := strings.ToLower(strings.TrimSpace(query))
+	for i := range apps {
+		apps[i].Installed = true
+		if apps[i].Info == "" {
+			apps[i].Info = apps[i].Notes
 		}
-		flatList = append(flatList, apps...)
-	}
-	return flatList, nil
-}
-
-func (m *SfsuManager) List() ([]models.AppInfo, error) {
-	return m.runSfsuQueryList("list", "")
-}
-
-func (m *SfsuManager) Status() ([]models.AppInfo, error) {
-	stdout, stderr, _, isSfsu, err := utils.RunHookedCommand("status", "")
-	m.Mu.Lock()
-	m.LastStderr = stderr
-	m.Mu.Unlock()
-	if err != nil {
-		return nil, err
-	}
-	if !isSfsu {
-		return nil, fmt.Errorf("sfsu fallback to scoop unexpectedly")
-	}
-
-	// sfsu status returns: {"scoop":false,"buckets":[],"packages":[]}
-	var result struct {
-		Packages []struct {
-			Name      string `json:"name"`
-			Current   string `json:"current"`
-			Available string `json:"available"`
-		} `json:"packages"`
-	}
-
-	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
-		return nil, fmt.Errorf("failed to parse sfsu status output: %w", err)
-	}
-
-	var list []models.AppInfo
-	for _, p := range result.Packages {
-		list = append(list, models.AppInfo{
-			Name:      p.Name,
-			Version:   p.Available, // Show available version as the "version" for update
-			Installed: true,
-		})
-	}
-	return list, nil
-}
-
-func (m *SfsuManager) Install(app string) error {
-	return runInteractiveCommand("scoop", "install", app)
-}
-
-func (m *SfsuManager) Uninstall(app string) error {
-	return runInteractiveCommand("scoop", "uninstall", app)
-}
-
-func (m *SfsuManager) Info(app string) (string, error) {
-	return runCommandOutput("sfsu", "info", app, "--json")
-}
-
-func (m *SfsuManager) Update(apps ...string) error {
-	if len(apps) > 0 {
-		args := append([]string{"update"}, apps...)
-		return runInteractiveCommand("scoop", args...)
-	}
-	// No args: Update both scoop and sfsu index
-	tui.PrintInfo("正在更新 Scoop 核心...")
-	if err := runInteractiveCommand("scoop", "update"); err != nil {
-		return err
-	}
-	tui.PrintInfo("正在更新 sfsu 索引...")
-	return runInteractiveCommand("sfsu", "update")
-}
-
-func (m *SfsuManager) BucketList() ([]models.BucketResult, error) {
-	stdout, stderr, _, isSfsu, err := utils.RunHookedCommand("bucket list", "")
-	m.Mu.Lock()
-	m.LastStderr = stderr
-	m.Mu.Unlock()
-	if err != nil {
-		return nil, err
-	}
-	if isSfsu {
-		return utils.StandardJSONToStructList[models.BucketResult](stdout)
-	}
-	return utils.PsDirtyJSONToStructList[models.BucketResult](stdout)
-}
-
-func (m *SfsuManager) BucketAdd(name, source string) error {
-	return runInteractiveCommand("scoop", "bucket", "add", name, source)
-}
-
-func (m *SfsuManager) BucketRemove(name string) error {
-	return runInteractiveCommand("scoop", "bucket", "rm", name)
-}
-
-func (m *SfsuManager) Hold(app string) error {
-	return runInteractiveCommand("scoop", "hold", app)
-}
-
-func (m *SfsuManager) Unhold(app string) error {
-	return runInteractiveCommand("scoop", "unhold", app)
-}
-
-func (m *SfsuManager) CacheList() ([]models.CacheResult, error) {
-	// sfsu doesn't support cache show --json yet, fallback to native scoop parsing
-	output, _, err := utils.RunWithPowerShellCombined("powershell", "-Command", "scoop cache show")
-	if err != nil {
-		if output == "" {
-			return nil, err
+		if apps[i].Status == models.StatusUnknown {
+			apps[i].Status = parse.ClassifyStatus(apps[i].Notes)
+		}
+		if q == "" ||
+			strings.Contains(strings.ToLower(apps[i].Name), q) ||
+			strings.Contains(strings.ToLower(apps[i].FullName()), q) {
+			filtered = append(filtered, apps[i])
 		}
 	}
-	results := utils.ParseScoopCacheOutput(output)
-	// if len(results) == 0 && output != "" {
-	// 	fmt.Printf("DEBUG: Raw Scoop Output:\n%s\n", output)
-	// }
-	return results, nil
+	parse.SortApps(filtered)
+	return filtered, nil
 }
 
-func (m *SfsuManager) CacheRemove(names ...string) error {
-	args := append([]string{"cache", "rm"}, names...)
-	return runInteractiveCommand("scoop", args...)
+func (b *SfsuBackend) Status(ctx context.Context) ([]models.AppInfo, error) {
+	raw, err := b.runner.SfsuJSON(ctx, "status")
+	if err != nil {
+		return nil, err
+	}
+	return parse.SfsuStatus(raw)
+}
+
+func (b *SfsuBackend) Info(ctx context.Context, app string) (models.AppDetail, error) {
+	if !b.runner.HasSfsu() {
+		return models.AppDetail{}, fmt.Errorf("sfsu 未安装，无法使用 sfsu 后端")
+	}
+	raw, err := b.runner.SfsuJSON(ctx, "info", app)
+	if err == nil {
+		detail := parse.Info(raw)
+		if detail.Name != "" || detail.Version != "" || detail.Description != "" {
+			return detail, nil
+		}
+	}
+	// sfsu info can be unavailable for some manifests; fall back to scoop.
+	return b.ScoopBackend.Info(ctx, app)
+}
+
+func (b *SfsuBackend) BucketList(ctx context.Context) ([]models.BucketResult, error) {
+	raw, err := b.runner.SfsuJSON(ctx, "bucket", "list")
+	if err != nil {
+		return nil, err
+	}
+	buckets, err := parse.List[models.BucketResult](raw)
+	if err != nil {
+		return nil, err
+	}
+	if buckets == nil {
+		buckets = []models.BucketResult{}
+	}
+	parse.SortBuckets(buckets)
+	return buckets, nil
 }

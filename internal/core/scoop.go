@@ -1,98 +1,163 @@
 package core
 
 import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/nyable/nyaru/internal/core/parse"
 	"github.com/nyable/nyaru/internal/models"
-	"github.com/nyable/nyaru/internal/utils"
 )
 
-type NativeScoopManager struct{}
-
-func NewNativeScoopManager() *NativeScoopManager {
-	return &NativeScoopManager{}
+// ScoopBackend is the native scoop backend. Reads go through PowerShell
+// ConvertTo-Json; writes are interactive scoop commands.
+type ScoopBackend struct {
+	runner *Runner
 }
 
-func (m *NativeScoopManager) Search(query string) ([]models.AppInfo, error) {
-	stdout, _, _, _, err := utils.RunHookedCommand("search", query)
+func NewScoopBackend(runner *Runner) *ScoopBackend {
+	return &ScoopBackend{runner: runner}
+}
+
+func (b *ScoopBackend) Name() string { return "scoop" }
+
+func (b *ScoopBackend) Search(ctx context.Context, query string) ([]models.AppInfo, error) {
+	raw, err := b.runner.ScoopSearchJSON(ctx, query)
+	if err != nil {
+		if isEmptyResult(err, raw) {
+			return []models.AppInfo{}, nil
+		}
+		return nil, err
+	}
+	apps, err := parse.List[models.AppInfo](raw)
 	if err != nil {
 		return nil, err
 	}
-	// Parse powershell output into models.AppInfo
-	return utils.PsDirtyJSONToStructList[models.AppInfo](stdout)
+	if apps == nil {
+		apps = []models.AppInfo{}
+	}
+	parse.SortApps(apps)
+	return apps, nil
 }
 
-func (m *NativeScoopManager) List() ([]models.AppInfo, error) {
-	stdout, _, _, _, err := utils.RunHookedCommand("list", "")
+func (b *ScoopBackend) List(ctx context.Context, query string) ([]models.AppInfo, error) {
+	raw, err := b.runner.ScoopListJSON(ctx, query)
+	if err != nil {
+		if isEmptyResult(err, raw) {
+			return []models.AppInfo{}, nil
+		}
+		return nil, err
+	}
+	apps, err := parse.List[models.AppInfo](raw)
 	if err != nil {
 		return nil, err
 	}
-	return utils.PsDirtyJSONToStructList[models.AppInfo](stdout)
-}
-
-func (m *NativeScoopManager) Status() ([]models.AppInfo, error) {
-	stdout, _, _, _, err := utils.RunHookedCommand("status", "")
-	if err != nil {
-		return nil, err
+	if apps == nil {
+		apps = []models.AppInfo{}
 	}
-	return utils.PsDirtyJSONToStructList[models.AppInfo](stdout)
-}
-
-func (m *NativeScoopManager) Install(app string) error {
-	return runInteractiveCommand("scoop", "install", app)
-}
-
-func (m *NativeScoopManager) Uninstall(app string) error {
-	return runInteractiveCommand("scoop", "uninstall", app)
-}
-
-func (m *NativeScoopManager) Info(app string) (string, error) {
-	return runCommandOutput("scoop", "info", app)
-}
-
-func (m *NativeScoopManager) Update(apps ...string) error {
-	args := append([]string{"update"}, apps...)
-	return runInteractiveCommand("scoop", args...)
-}
-
-func (m *NativeScoopManager) BucketList() ([]models.BucketResult, error) {
-	stdout, _, _, _, err := utils.RunHookedCommand("bucket list", "")
-	if err != nil {
-		return nil, err
-	}
-	return utils.PsDirtyJSONToStructList[models.BucketResult](stdout)
-}
-
-func (m *NativeScoopManager) BucketAdd(name, source string) error {
-	return runInteractiveCommand("scoop", "bucket", "add", name, source)
-}
-
-func (m *NativeScoopManager) Hold(app string) error {
-	return runInteractiveCommand("scoop", "hold", app)
-}
-
-func (m *NativeScoopManager) Unhold(app string) error {
-	return runInteractiveCommand("scoop", "unhold", app)
-}
-
-func (m *NativeScoopManager) BucketRemove(name string) error {
-	return runInteractiveCommand("scoop", "bucket", "rm", name)
-}
-
-func (m *NativeScoopManager) CacheList() ([]models.CacheResult, error) {
-	// Use powershell to ensure scoop (which can be a function/shim) is called correctly
-	output, _, err := utils.RunWithPowerShellCombined("powershell", "-Command", "scoop cache show")
-	if err != nil {
-		if output == "" {
-			return nil, err
+	for i := range apps {
+		apps[i].Installed = true
+		if apps[i].Info == "" {
+			apps[i].Info = apps[i].Notes
+		}
+		if apps[i].Status == models.StatusUnknown {
+			apps[i].Status = parse.ClassifyStatus(apps[i].Info)
 		}
 	}
-	results := utils.ParseScoopCacheOutput(output)
-	// if len(results) == 0 && output != "" {
-	// fmt.Printf("DEBUG: Raw Scoop Output:\n%s\n", output)
-	// }
-	return results, nil
+	parse.SortApps(apps)
+	return apps, nil
 }
 
-func (m *NativeScoopManager) CacheRemove(names ...string) error {
-	args := append([]string{"cache", "rm"}, names...)
-	return runInteractiveCommand("scoop", args...)
+func (b *ScoopBackend) Status(ctx context.Context) ([]models.AppInfo, error) {
+	raw, err := b.runner.ScoopStatusJSON(ctx)
+	if err != nil {
+		if isEmptyResult(err, raw) {
+			return []models.AppInfo{}, nil
+		}
+		return nil, err
+	}
+	return parse.ScoopStatus(raw)
+}
+
+func (b *ScoopBackend) Info(ctx context.Context, app string) (models.AppDetail, error) {
+	raw, err := b.runner.ScoopOutput(ctx, "info", app)
+	if err != nil {
+		if strings.TrimSpace(raw) == "" {
+			return models.AppDetail{}, err
+		}
+	}
+	detail := parse.Info(raw)
+	if detail.Name == "" && detail.Version == "" && detail.Description == "" {
+		if err != nil {
+			return models.AppDetail{}, err
+		}
+		return models.AppDetail{}, fmt.Errorf("未找到 %s 的信息", app)
+	}
+	return detail, nil
+}
+
+func (b *ScoopBackend) BucketList(ctx context.Context) ([]models.BucketResult, error) {
+	raw, err := b.runner.ScoopBucketListJSON(ctx)
+	if err != nil {
+		if isEmptyResult(err, raw) {
+			return []models.BucketResult{}, nil
+		}
+		return nil, err
+	}
+	buckets, err := parse.List[models.BucketResult](raw)
+	if err != nil {
+		return nil, err
+	}
+	if buckets == nil {
+		buckets = []models.BucketResult{}
+	}
+	parse.SortBuckets(buckets)
+	return buckets, nil
+}
+
+func (b *ScoopBackend) CacheList(ctx context.Context) ([]models.CacheResult, error) {
+	raw, err := b.runner.ScoopOutput(ctx, "cache", "show")
+	if err != nil {
+		if isEmptyResult(err, raw) {
+			return []models.CacheResult{}, nil
+		}
+		return nil, err
+	}
+	return parse.CacheOutput(raw), nil
+}
+
+// OldVersions scans the apps directories directly because scoop does not
+// expose a dry-run for cleanup. The current junction marks the live version;
+// only the remaining directories are reported.
+func (b *ScoopBackend) OldVersions(ctx context.Context) ([]models.OldVersion, error) {
+	raw, err := b.runner.ScoopOldVersionsJSON(ctx)
+	if err != nil {
+		if isEmptyResult(err, raw) {
+			return []models.OldVersion{}, nil
+		}
+		return nil, err
+	}
+	return parse.OldVersions(raw)
+}
+
+// isEmptyResult distinguishes "nothing to show" from a real failure. Scoop
+// exits non-zero for empty search/list results.
+func isEmptyResult(err error, output string) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(output + " " + err.Error())
+	for _, marker := range []string{
+		"no matches found",
+		"there aren't any apps installed",
+		"there are no apps installed",
+		"no apps installed",
+		"no bucket found",
+		"no buckets found",
+	} {
+		if strings.Contains(msg, marker) {
+			return true
+		}
+	}
+	return false
 }

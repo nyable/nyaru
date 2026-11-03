@@ -25,6 +25,10 @@ jobs:
 
       - name: Download Go modules
         run: go mod download
+      - name: Test
+        run: go test ./...
+      - name: Vet
+        run: go vet ./...
       - name: Build for Windows (AMD64)
         run: |
           TAG_NAME=${{ github.ref_name }}

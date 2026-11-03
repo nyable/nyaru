@@ -38,8 +38,10 @@ type BucketResult struct {
 	Source    string            `json:"source"`
 	Updated   BucketUpdatedInfo `json:"updated"`
 	Manifests int               `json:"manifests"`
-	Selected  bool              `json:"-"` // Internal field for multiselect
 }
+
+// ID implements tui.Item.
+func (b BucketResult) ID() string { return b.Name }
 
 // FilterValue implements the bubbletea list.Item interface
 func (b BucketResult) FilterValue() string {
@@ -53,9 +55,5 @@ func (b BucketResult) Title() string {
 
 // Description implements the bubbletea list.DefaultItem interface
 func (b BucketResult) Description() string {
-	selected := ""
-	if b.Selected {
-		selected = " [√]"
-	}
-	return fmt.Sprintf("%s (%d manifests) - %s%s", b.Source, b.Manifests, b.Updated.DateTime, selected)
+	return fmt.Sprintf("%s · %d 份清单 · %s", b.Source, b.Manifests, b.Updated.DateTime)
 }
